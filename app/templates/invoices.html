@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outstanding Invoices - FinHealthMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>FinHealthMonitor</h1>
+            <div class="header-actions">
+                <span class="tenant-name">Organization: {{ tenant_name }}</span>
+                <nav class="nav-links">
+                    <a href="/accounts" class="nav-link">Chart of Accounts</a>
+                    <a href="/invoices" class="nav-link active">Outstanding Invoices</a>
+                </nav>
+                <a href="/logout" class="btn btn-secondary">Logout</a>
+            </div>
+        </header>
+
+        {% if error %}
+        <div class="error-message">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="content-section">
+            <h2>Outstanding Invoices</h2>
+            <div class="summary-stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Invoices</div>
+                    <div class="stat-value">{{ invoice_count }}</div>
+                </div>
+                <div class="stat-card stat-card-primary">
+                    <div class="stat-label">Total Outstanding</div>
+                    <div class="stat-value">${{ "%.2f"|format(total_outstanding) }}</div>
+                </div>
+            </div>
+            
+            {% if invoices %}
+            <div class="table-container">
+                <table class="accounts-table">
+                    <thead>
+                        <tr>
+                            <th>Invoice Number</th>
+                            <th>Contact</th>
+                            <th>Date</th>
+                            <th>Due Date</th>
+                            <th>Total</th>
+                            <th>Amount Due</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for invoice in invoices %}
+                        <tr>
+                            <td>{{ invoice.InvoiceNumber or invoice.get('InvoiceNumber', '-') }}</td>
+                            <td>{{ invoice.Contact.Name if invoice.Contact else '-' }}</td>
+                            <td>{{ invoice.Date[:10] if invoice.Date else '-' }}</td>
+                            <td>{{ invoice.DueDate[:10] if invoice.DueDate else '-' }}</td>
+                            <td>${{ "%.2f"|format(invoice.Total or 0) }}</td>
+                            <td class="amount-due">${{ "%.2f"|format(invoice.AmountDue or 0) }}</td>
+                            <td>
+                                <span class="status-badge status-{{ (invoice.Status or '').lower() }}">
+                                    {{ invoice.Status or 'UNKNOWN' }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No outstanding invoices found.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chart of Accounts - FinHealthMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>FinHealthMonitor</h1>
+            <div class="header-actions">
+                <span class="tenant-name">Organization: {{ tenant_name }}</span>
+                <nav class="nav-links">
+                    <a href="/accounts" class="nav-link active">Chart of Accounts</a>
+                    <a href="/invoices" class="nav-link">Outstanding Invoices</a>
+                </nav>
+                <a href="/logout" class="btn btn-secondary">Logout</a>
+            </div>
+        </header>
+
+        {% if error %}
+        <div class="error-message">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="content-section">
+            <h2>Chart of Accounts</h2>
+            <p class="account-count">Total Accounts: {{ account_count }}</p>
+            
+            {% if accounts %}
+            <div class="table-container">
+                <table class="accounts-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Class</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr>
+                            <td>{{ account.Code or '-' }}</td>
+                            <td>{{ account.Name }}</td>
+                            <td>{{ account.Type }}</td>
+                            <td>
+                                <span class="status-badge status-{{ account.Status.lower() }}">
+                                    {{ account.Status }}
+                                </span>
+                            </td>
+                            <td>{{ account.Class or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No accounts found.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Placeholder for future charts section -->
+        <div class="content-section" id="charts-section" style="display: none;">
+            <h2>Account Analytics</h2>
+            <div id="charts-container">
+                <!-- Charts will be rendered here in the future -->
+            </div>
+        </div>
+
+        <!-- Placeholder for future chatbot section -->
+        <div class="content-section" id="chatbot-section" style="display: none;">
+            <h2>Financial Assistant</h2>
+            <div id="chatbot-container">
+                <!-- Chatbot will be rendered here in the future -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
+

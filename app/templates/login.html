@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - FinHealthMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="login-card">
+            <h1>FinHealthMonitor</h1>
+            <p class="subtitle">Connect to your Xero account to view your chart of accounts</p>
+            
+            {% if error %}
+            <div class="error-message">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+            
+            <div class="login-actions">
+                <a href="/login" class="btn btn-primary">Connect with Xero</a>
+            </div>
+            
+            <div class="info-box">
+                <p><strong>Note:</strong> You will be redirected to Xero to authorize this application.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

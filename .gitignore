@@ -1,0 +1,7 @@
+# VSCode settings
+venv/
+xero-mcp-server/
+node_modules/
+__pycache__/
+*.pyc
+.env
