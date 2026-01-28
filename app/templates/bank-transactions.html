@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Transactions - FinHealthMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>FinHealthMonitor</h1>
+            <div class="header-actions">
+                {% if tenant_name %}
+                <span class="tenant-name">Organization: {{ tenant_name }}</span>
+                {% endif %}
+                <div class="dropdown">
+                    <button class="dropbtn">Menu ▼</button>
+                    <div class="dropdown-content">
+                        <a href="/home">Home</a>
+                        <a href="/settings">Settings</a>
+                        <a href="/payroll-risk">Payroll Risk</a>
+                        <a href="/accounts">Chart of Account</a>
+                        <a href="/invoices">Outstanding Invoices</a>
+                        <a href="/manual-journals">Manual Journals</a>
+                        <a href="/bank-transactions">Bank Transactions</a>
+                    </div>
+                </div>
+                {% if tenant_name %}
+                <a href="/logout" class="btn btn-secondary">Logout</a>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="content-section">
+            <h2>Bank Transactions (Bank Feeds)</h2>
+            
+            {% if error %}
+            <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+
+            {% if transactions %}
+            <div style="margin-top: 20px;">
+                {% for item in transactions %}
+                    {% if item.type == "text" %}
+                    <div style="background: #f8f9fa; border-left: 4px solid #28a745; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
+                        <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9em; margin: 0;">{{ item.text }}</pre>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="background: #e9ecef; padding: 20px; border-radius: 6px; text-align: center; color: #6c757d;">
+                <p>No bank transactions found.</p>
+            </div>
+            {% endif %}
+
+            <div style="margin-top: 30px;">
+                <a href="/bank-transactions" class="btn btn-primary">Refresh</a>
+                <a href="/home" class="btn btn-secondary">Back to Home</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

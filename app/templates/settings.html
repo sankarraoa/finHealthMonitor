@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - FinHealthMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+        // CRITICAL: Test that script is executing
+        console.log('HEAD SCRIPT: Script is executing...');
+        
+        // CRITICAL: Define function DIRECTLY on window - no IIFE, no scope issues
+        // This MUST be the first thing in the script to ensure it's always available
+        try {
+            window.showAddConnectionModal = function(category) {
+                try {
+                    console.log('showAddConnectionModal called with category:', category);
+                    
+                    var categoryInput = document.getElementById('modal-category');
+                    var softwareSelect = document.getElementById('modal-software');
+                    var nameInput = document.getElementById('modal-name');
+                    var modal = document.getElementById('addConnectionModal');
+                    
+                    if (!categoryInput || !softwareSelect || !modal) {
+                        alert('Error: Modal elements not found. Please refresh the page.');
+                        return false;
+                    }
+                    
+                    var softwareOptions = window.softwareOptions;
+                    if (!softwareOptions) {
+                        alert('Error: Software options not loaded. Please refresh the page.');
+                        return false;
+                    }
+                    
+                    categoryInput.value = category;
+                    softwareSelect.innerHTML = '<option value="">Select software...</option>';
+                    if (nameInput) nameInput.value = '';
+                    
+                    if (!softwareOptions[category]) {
+                        alert('Error: No software options available for this category.');
+                        return false;
+                    }
+                    
+                    var categorySoftware = softwareOptions[category];
+                    for (var key in categorySoftware) {
+                        if (categorySoftware.hasOwnProperty(key)) {
+                            var info = categorySoftware[key];
+                            var option = document.createElement('option');
+                            option.value = key;
+                            var displayName = info.name || key.charAt(0).toUpperCase() + key.slice(1);
+                            option.textContent = displayName;
+                            softwareSelect.appendChild(option);
+                        }
+                    }
+                    
+                    modal.style.display = 'flex';
+                    return true;
+                } catch (e) {
+                    console.error('Error in showAddConnectionModal:', e);
+                    alert('Error opening modal: ' + e.message);
+                    return false;
+                }
+            };
+            
+            console.log('HEAD SCRIPT: showAddConnectionModal function defined');
+        } catch (e) {
+            console.error('HEAD SCRIPT ERROR: Failed to define showAddConnectionModal:', e);
+            // Fallback definition
+            window.showAddConnectionModal = function(cat) {
+                alert('Error: Function definition failed. Please refresh the page.');
+            };
+        }
+        
+        try {
+            window.closeAddConnectionModal = function() {
+                var modal = document.getElementById('addConnectionModal');
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+            };
+            console.log('HEAD SCRIPT: closeAddConnectionModal function defined');
+        } catch (e) {
+            console.error('HEAD SCRIPT ERROR: Failed to define closeAddConnectionModal:', e);
+        }
+        
+        // Verify functions are defined IMMEDIATELY
+        console.log('HEAD SCRIPT: Functions defined. showAddConnectionModal:', typeof window.showAddConnectionModal);
+        console.log('HEAD SCRIPT: Functions defined. closeAddConnectionModal:', typeof window.closeAddConnectionModal);
+        console.log('HEAD SCRIPT: window object check:', typeof window);
+        console.log('HEAD SCRIPT: showAddConnectionModal on window:', 'showAddConnectionModal' in window);
+        
+        // Load software options - AFTER functions are defined
+        // This is in a separate try-catch so errors here don't prevent function definition
+        try {
+            // Use JSON.parse to safely handle the Jinja2 template output
+            var softwareOptionsJson = {{ software_options|tojson }};
+            window.softwareOptions = softwareOptionsJson;
+            console.log('HEAD SCRIPT: Software options loaded:', window.softwareOptions);
+        } catch (e) {
+            console.error('HEAD SCRIPT ERROR: Error loading software options:', e);
+            console.error('HEAD SCRIPT ERROR: Error details:', e.message, e.stack);
+            window.softwareOptions = {};
+        }
+        
+        // Final verification and fallback
+        if (typeof window.showAddConnectionModal !== 'function') {
+            console.error('ERROR: showAddConnectionModal is NOT a function!');
+            // Last resort fallback - define a minimal version
+            window.showAddConnectionModal = function(cat) {
+                alert('Error: Modal function failed to load properly. Please refresh the page.');
+                console.error('Fallback function called - original function was not defined');
+            };
+        } else {
+            console.log('SUCCESS: showAddConnectionModal is ready');
+        }
+        
+        // Test that we can actually call it
+        try {
+            var testResult = typeof window.showAddConnectionModal;
+            console.log('Test: window.showAddConnectionModal type is:', testResult);
+            if (testResult !== 'function') {
+                console.error('CRITICAL: Function type check failed!');
+            }
+        } catch (e) {
+            console.error('CRITICAL: Error checking function:', e);
+        }
+    </script>
+    <style>
+        .category-section {
+            margin-bottom: 40px;
+        }
+        .category-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .category-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+            margin: 0;
+        }
+        .connection-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border: 2px solid #dee2e6;
+            transition: all 0.3s ease;
+        }
+        .connection-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+        .connection-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        .connection-info {
+            flex: 1;
+        }
+        .connection-name {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            margin: 0 0 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .connection-name input {
+            font-size: 1.2em;
+            font-weight: 600;
+            padding: 5px 10px;
+            border: 2px solid #667eea;
+            border-radius: 4px;
+            width: 300px;
+        }
+        .connection-name-edit {
+            display: none;
+        }
+        .connection-name-edit.active {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .connection-name-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .connection-name-display.hidden {
+            display: none;
+        }
+        .connection-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 8px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .status-connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status-expired {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .connection-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .action-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .btn-connect {
+            background: #28a745;
+            color: white;
+        }
+        .btn-connect:hover {
+            background: #218838;
+        }
+        .btn-disconnect {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-disconnect:hover {
+            background: #c82333;
+        }
+        .btn-refresh {
+            background: #667eea;
+            color: white;
+        }
+        .btn-refresh:hover {
+            background: #5568d3;
+        }
+        .btn-edit {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-edit:hover {
+            background: #5a6268;
+        }
+        .btn-save {
+            background: #28a745;
+            color: white;
+        }
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+        }
+        .add-connection-btn {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .add-connection-btn:hover {
+            background: #5568d3;
+        }
+        .software-icon {
+            font-size: 1.5em;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>FinHealthMonitor</h1>
+            <div class="header-actions">
+                <div class="dropdown">
+                    <button class="dropbtn">Menu ▼</button>
+                    <div class="dropdown-content">
+                        <a href="/home">Home</a>
+                        <a href="/settings" class="active">Settings</a>
+                        <a href="/payroll-risk">Payroll Risk</a>
+                        <a href="/accounts">Chart of Account</a>
+                        <a href="/invoices">Outstanding Invoices</a>
+                        <a href="/manual-journals">Manual Journals</a>
+                        <a href="/bank-transactions">Bank Transactions</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        {% if error %}
+        <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        {% if success %}
+        <div class="success-message" style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+            <strong>Success:</strong> {{ success }}
+        </div>
+        {% endif %}
+
+        <div class="content-section">
+            <h2>Settings</h2>
+            <p>Manage your integrations and connections.</p>
+
+            {% for category_key, category_info in categories.items() %}
+            <div class="category-section">
+                <div class="category-header">
+                    <h3 class="category-title">{{ category_info.name }}</h3>
+                </div>
+
+                {% if connections_by_category.get(category_key) %}
+                    {% for connection in connections_by_category[category_key] %}
+                    <div class="connection-card" data-connection-id="{{ connection.id }}">
+                        <div class="connection-header">
+                            <div class="connection-info">
+                                <div class="connection-name">
+                                    <div class="connection-name-display">
+                                        <span class="software-icon">{{ software_info[connection.software].icon }}</span>
+                                        <span id="name-display-{{ connection.id }}">{{ connection.name }}</span>
+                                        <button class="action-btn btn-edit" onclick="editConnectionName('{{ connection.id }}')" title="Edit name">
+                                            Edit
+                                        </button>
+                                    </div>
+                                    <div class="connection-name-edit" id="name-edit-{{ connection.id }}">
+                                        <input type="text" id="name-input-{{ connection.id }}" value="{{ connection.name }}" />
+                                        <button class="action-btn btn-save" onclick="saveConnectionName('{{ connection.id }}')" title="Save">
+                                            Save
+                                        </button>
+                                        <button class="action-btn btn-cancel" onclick="cancelEditName('{{ connection.id }}')" title="Cancel">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="connection-meta">
+                                    <span class="connection-status {% if connection.access_token and not connection.get('token_expired') %}status-connected{% elif connection.get('token_expired') %}status-expired{% else %}status-disconnected{% endif %}">
+                                        {% if connection.access_token and not connection.get('token_expired') %}
+                                            Connected
+                                        {% elif connection.get('token_expired') %}
+                                            Expired - Click Refresh to renew
+                                        {% else %}
+                                            Not Connected
+                                        {% endif %}
+                                    </span>
+                                    {% if connection.software == 'xero' %}
+                                    <span>Type: Xero</span>
+                                    {% set tenants = connection.get('tenants', []) %}
+                                    {% if tenants %}
+                                    <span>{{ tenants|length }} tenant(s)</span>
+                                    {% endif %}
+                                    {% elif connection.software == 'quickbooks' %}
+                                    <span>Type: QuickBooks</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="connection-actions">
+                                {% if connection.access_token %}
+                                    {% if connection.get('token_expired') %}
+                                    <form method="post" action="/connections/{{ connection.id }}/refresh" style="margin: 0; display: inline;">
+                                        <button type="submit" class="action-btn btn-refresh" title="Refresh Expired Token">
+                                            Refresh Token
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <form method="post" action="/connections/{{ connection.id }}/refresh" style="margin: 0; display: inline;">
+                                        <button type="submit" class="action-btn btn-refresh" title="Refresh Token">
+                                            Refresh
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    {% if connection.software == 'xero' %}
+                                    <form method="post" action="/connections/{{ connection.id }}/add-tenant" style="margin: 0; display: inline;">
+                                        <button type="submit" class="action-btn btn-connect" title="Add Tenant">
+                                            Add Tenant
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <form method="post" action="/connections/{{ connection.id }}/disconnect-all" style="margin: 0; display: inline;">
+                                        <button type="submit" class="action-btn btn-disconnect" title="Disconnect All" onclick="return confirm('Are you sure you want to disconnect all tenants? This will revoke access with Xero for all tenants.')">
+                                            Disconnect All
+                                        </button>
+                                    </form>
+                                {% else %}
+                                <a href="/connections/{{ connection.id }}/connect" class="action-btn btn-connect" title="Connect">
+                                    Connect
+                                </a>
+                                <form method="post" action="/connections/{{ connection.id }}/delete" style="margin: 0; display: inline;">
+                                    <button type="submit" class="action-btn btn-disconnect" title="Delete" onclick="return confirm('Are you sure you want to delete this connection?')">
+                                        Delete
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if connection.access_token and connection.get('tenants') %}
+                        <div class="tenants-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                            <h4 style="margin: 0 0 10px 0; font-size: 0.95em; color: #666;">Tenants:</h4>
+                            <ul style="list-style: none; padding: 0; margin: 0;">
+                                {% for tenant in connection.get('tenants', []) %}
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 5px; background: #f8f9fa; border-radius: 4px;">
+                                    <span>{{ tenant.get('tenant_name', 'Unknown') }} ({{ tenant.get('tenant_id', '')[:8] }}...)</span>
+                                    <form method="post" action="/connections/{{ connection.id }}/remove-tenant" style="margin: 0; display: inline;">
+                                        <input type="hidden" name="tenant_id" value="{{ tenant.get('tenant_id') }}" />
+                                        <button type="submit" class="action-btn btn-disconnect" style="padding: 4px 12px; font-size: 0.85em;" title="Remove Tenant" onclick="return confirm('Are you sure you want to remove this tenant? This will disconnect it from Xero.')">
+                                            Remove
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% endif %}
+
+                <!-- Add Connection Button for this category -->
+                <div style="margin-top: 15px;">
+                    <button class="add-connection-btn" data-category="{{ category_key }}" type="button">
+                        <span style="font-size: 1.2em; font-weight: bold;">+</span> Add Connection
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Hidden element to store software options (avoids JavaScript syntax issues) -->
+    <div id="software-options-data" data-options='{{ software_options|tojson }}' style="display: none;"></div>
+
+    <!-- Add Connection Modal -->
+    <div id="addConnectionModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <h3 style="margin-top: 0;">Add New Connection</h3>
+            <form method="post" action="/connections/add" id="addConnectionForm">
+                <input type="hidden" name="category" id="modal-category" />
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Software:</label>
+                    <select name="software" id="modal-software" required style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+                        <option value="">Select software...</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Connection Name:</label>
+                    <input type="text" name="name" id="modal-name" required placeholder="e.g., Main Xero Account" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 1em;" />
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button type="button" onclick="if(window.closeAddConnectionModal){window.closeAddConnectionModal();}else{alert('Error: Function not loaded. Please refresh.');}" class="action-btn btn-cancel">Cancel</button>
+                    <button type="submit" class="action-btn btn-connect">Add & Connect</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Load software options from data attribute (avoids JavaScript syntax issues)
+        try {
+            var dataElement = document.getElementById('software-options-data');
+            if (dataElement) {
+                var dataOptions = dataElement.getAttribute('data-options');
+                if (dataOptions) {
+                    var softwareOptionsJson = JSON.parse(dataOptions);
+                    if (!window.softwareOptions || Object.keys(window.softwareOptions).length === 0) {
+                        window.softwareOptions = softwareOptionsJson;
+                    }
+                } else {
+                    window.softwareOptions = window.softwareOptions || {};
+                }
+            } else {
+                window.softwareOptions = window.softwareOptions || {};
+            }
+        } catch (e) {
+            window.softwareOptions = window.softwareOptions || {};
+        }
+        
+        // Define showAddConnectionModal function
+        function showAddConnectionModal(category) {
+            try {
+                var categoryInput = document.getElementById('modal-category');
+                var softwareSelect = document.getElementById('modal-software');
+                var nameInput = document.getElementById('modal-name');
+                var modal = document.getElementById('addConnectionModal');
+                
+                if (!categoryInput || !softwareSelect || !modal) {
+                    alert('Error: Modal elements not found. Please refresh the page.');
+                    return false;
+                }
+                
+                var softwareOptions = window.softwareOptions;
+                if (!softwareOptions || Object.keys(softwareOptions).length === 0) {
+                    alert('Error: Software options not loaded. Please refresh the page.');
+                    return false;
+                }
+                
+                categoryInput.value = category;
+                softwareSelect.innerHTML = '<option value="">Select software...</option>';
+                if (nameInput) nameInput.value = '';
+                
+                if (!softwareOptions[category]) {
+                    alert('Error: No software options available for this category.');
+                    return false;
+                }
+                
+                var categorySoftware = softwareOptions[category];
+                for (var key in categorySoftware) {
+                    if (categorySoftware.hasOwnProperty(key)) {
+                        var info = categorySoftware[key];
+                        var option = document.createElement('option');
+                        option.value = key;
+                        var displayName = info.name || key.charAt(0).toUpperCase() + key.slice(1);
+                        option.textContent = displayName;
+                        softwareSelect.appendChild(option);
+                    }
+                }
+                
+                modal.style.display = 'flex';
+                return true;
+            } catch (e) {
+                alert('Error opening modal: ' + e.message);
+                return false;
+            }
+        }
+        
+        function closeAddConnectionModal() {
+            var modal = document.getElementById('addConnectionModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        // Make functions globally available
+        window.showAddConnectionModal = showAddConnectionModal;
+        window.closeAddConnectionModal = closeAddConnectionModal;
+        
+        function editConnectionName(connectionId) {
+            document.getElementById('name-display-' + connectionId).classList.add('hidden');
+            document.getElementById('name-edit-' + connectionId).classList.add('active');
+        }
+        
+        function cancelEditName(connectionId) {
+            document.getElementById('name-display-' + connectionId).classList.remove('hidden');
+            document.getElementById('name-edit-' + connectionId).classList.remove('active');
+            document.getElementById('name-input-' + connectionId).value = document.getElementById('name-display-' + connectionId).textContent.trim();
+        }
+        
+        function saveConnectionName(connectionId) {
+            const newName = document.getElementById('name-input-' + connectionId).value.trim();
+            if (!newName) {
+                alert('Name cannot be empty');
+                return;
+            }
+            
+            fetch('/connections/' + connectionId + '/rename', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'name=' + encodeURIComponent(newName)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('name-display-' + connectionId).textContent = newName;
+                    cancelEditName(connectionId);
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to update name'));
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        }
+        
+        function validateConnectionForm() {
+            const softwareSelect = document.getElementById('modal-software');
+            const nameInput = document.getElementById('modal-name');
+            
+            if (!softwareSelect || !softwareSelect.value) {
+                alert('Please select a software type.');
+                return false;
+            }
+            
+            if (!nameInput || !nameInput.value.trim()) {
+                alert('Please enter a connection name.');
+                return false;
+            }
+            
+            return true;
+        }
+        
+        // Safari-compatible helper function
+        function findButtonWithClass(element, className) {
+            var current = element;
+            var depth = 0;
+            while (current && current !== document && depth < 10) {
+                if (current.classList && current.classList.contains(className)) {
+                    return current;
+                }
+                current = current.parentNode;
+                depth++;
+            }
+            return null;
+        }
+        
+        // Handle ALL DOMContentLoaded tasks in one handler
+        document.addEventListener('DOMContentLoaded', function() {
+            // Handle clicks on "Add Connection" buttons using event delegation
+            document.addEventListener('click', function(e) {
+                var button = findButtonWithClass(e.target, 'add-connection-btn');
+                if (!button && e.target.classList && e.target.classList.contains('add-connection-btn')) {
+                    button = e.target;
+                }
+                
+                if (button) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    var category = button.getAttribute('data-category');
+                    if (category && window.showAddConnectionModal) {
+                        window.showAddConnectionModal(category);
+                    } else {
+                        alert('Error: Unable to open connection modal. Please refresh the page.');
+                    }
+                    return false;
+                }
+            });
+            
+            // Handle form submission
+            const form = document.getElementById('addConnectionForm');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    const softwareSelect = document.getElementById('modal-software');
+                    const nameInput = document.getElementById('modal-name');
+                    
+                    if (!softwareSelect || !softwareSelect.value) {
+                        e.preventDefault();
+                        alert('Please select a software type.');
+                        return false;
+                    }
+                    
+                    if (!nameInput || !nameInput.value.trim()) {
+                        e.preventDefault();
+                        alert('Please enter a connection name.');
+                        return false;
+                    }
+                    
+                    return true;
+                });
+            }
+            
+            // Close modal when clicking outside
+            const modal = document.getElementById('addConnectionModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        if (window.closeAddConnectionModal) {
+                            window.closeAddConnectionModal();
+                        }
+                    }
+                }, false);
+            }
+        });
+        
+    </script>
+</body>
+</html>

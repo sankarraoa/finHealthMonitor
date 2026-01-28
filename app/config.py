@@ -27,6 +27,20 @@ class Config:
     # Application settings
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
+    # LLM Provider configuration
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai").lower()  # "openai" or "toqan"
+    
+    # Architecture mode
+    USE_AGENTIC_ARCHITECTURE: bool = os.getenv("USE_AGENTIC_ARCHITECTURE", "false").lower() == "true"
+    
+    # OpenAI API configuration
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    
+    # Toqan API configuration
+    TOQAN_API_KEY: str = os.getenv("TOQAN_API_KEY", "")
+    TOQAN_API_BASE_URL: str = os.getenv("TOQAN_API_BASE_URL", "https://api.coco.prod.toqan.ai/api")
+    
     @classmethod
     def validate(cls) -> None:
         """Validate that required configuration values are set."""
@@ -38,9 +52,7 @@ class Config:
     @classmethod
     def get_scopes(cls) -> str:
         """Get the OAuth scopes required for the application."""
-        return "accounting.transactions accounting.settings.read offline_access"
-
-
+        return "accounting.transactions accounting.settings.read accounting.reports.read accounting.contacts accounting.attachments accounting.journals.read offline_access"
 # Create a global config instance
 config = Config()
 

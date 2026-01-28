@@ -11,11 +11,21 @@
         <header class="header">
             <h1>FinHealthMonitor</h1>
             <div class="header-actions">
+                {% if tenant_name %}
                 <span class="tenant-name">Organization: {{ tenant_name }}</span>
-                <nav class="nav-links">
-                    <a href="/accounts" class="nav-link active">Chart of Accounts</a>
-                    <a href="/invoices" class="nav-link">Outstanding Invoices</a>
-                </nav>
+                {% endif %}
+                <div class="dropdown">
+                    <button class="dropbtn">Menu ▼</button>
+                    <div class="dropdown-content">
+                        <a href="/">Home</a>
+                        <a href="/settings">Settings</a>
+                        <a href="/payroll-risk">Payroll Risk</a>
+                        <a href="/accounts" class="active">Chart of Account</a>
+                        <a href="/invoices">Outstanding Invoices</a>
+                        <a href="/manual-journals">Manual Journals</a>
+                        <a href="/bank-transactions">Bank Transactions</a>
+                    </div>
+                </div>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
             </div>
         </header>
@@ -27,7 +37,32 @@
         {% endif %}
 
         <div class="content-section">
-            <h2>Chart of Accounts</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Chart of Accounts</h2>
+                {% if connections %}
+                <div class="connection-selector" style="display: flex; align-items: center; gap: 8px;">
+                    <label for="connection-select" style="font-weight: 500; font-size: 0.9em;">Connection:</label>
+                    <select id="connection-select" onchange="switchConnection(this.value)" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: white; cursor: pointer; min-width: 200px;">
+                        {% for conn in connections %}
+                        <option value="{{ conn.id }}" {% if selected_connection and conn.id == selected_connection.id %}selected{% endif %}>
+                            {{ conn.name }}{% if conn.tenant_name %} - {{ conn.tenant_name }}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button onclick="refreshPage()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #007bff; color: white; cursor: pointer; font-size: 0.9em; border: none;">Refresh</button>
+                </div>
+                {% endif %}
+            </div>
+            {% if selected_connection %}
+            <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-left: 4px solid #007bff; border-radius: 4px;">
+                <p style="margin: 0; font-size: 0.9em; color: #666;">
+                    <strong>Data Source:</strong> {{ selected_connection.name }}{% if selected_connection.tenant_name %} ({{ selected_connection.tenant_name }}){% endif %}
+                    {% if selected_connection.software %}
+                    <span style="margin-left: 15px;">• <strong>Type:</strong> {{ selected_connection.software|title }}</span>
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
             <p class="account-count">Total Accounts: {{ account_count }}</p>
             
             {% if accounts %}
@@ -83,6 +118,22 @@
         </div>
     </div>
 
+    <script>
+        function switchConnection(connectionId) {
+            if (connectionId) {
+                // Update URL with connection_id parameter and reload
+                const url = new URL(window.location.href);
+                url.searchParams.set('connection_id', connectionId);
+                window.location.href = url.toString();
+            }
+        }
+        
+        function refreshPage() {
+            // Reload the current page with current connection_id
+            const url = new URL(window.location.href);
+            window.location.href = url.toString();
+        }
+    </script>
     <script src="/static/js/main.js"></script>
 </body>
 </html>

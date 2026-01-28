@@ -1,0 +1,87 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    text { font-family: Inter, Arial, sans-serif; fill: #C0392B; }
+    .box { fill: #FFF6EE; stroke: #E74C3C; stroke-width: 2; rx: 10; }
+    .circle { fill: #FFF6EE; stroke: #E74C3C; stroke-width: 3; }
+    .arrow { stroke: #E74C3C; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .label { font-size: 16px; font-weight: 500; }
+    .title { font-size: 20px; font-weight: 700; }
+  </style>
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#E74C3C"/>
+    </marker>
+  </defs>
+
+  <!-- Central Circle -->
+  <circle cx="600" cy="450" r="120" class="circle"/>
+  <text x="600" y="435" text-anchor="middle" class="title">KYC</text>
+  <text x="600" y="460" text-anchor="middle" class="title">Central</text>
+  <text x="600" y="485" text-anchor="middle" class="title">DB</text>
+
+  <!-- Top Partners -->
+  <rect x="350" y="80" width="100" height="40" class="box"/>
+  <text x="400" y="105" text-anchor="middle" class="label">LP</text>
+
+  <rect x="470" y="80" width="100" height="40" class="box"/>
+  <text x="520" y="105" text-anchor="middle" class="label">COF</text>
+
+  <rect x="590" y="80" width="110" height="40" class="box"/>
+  <text x="645" y="105" text-anchor="middle" class="label">Meesho</text>
+
+  <rect x="730" y="80" width="110" height="40" class="box"/>
+  <text x="785" y="105" text-anchor="middle" class="label">Rolex</text>
+
+  <!-- Left -->
+  <rect x="120" y="380" width="110" height="40" class="box"/>
+  <text x="175" y="405" text-anchor="middle" class="label">Bajaj</text>
+
+  <rect x="120" y="450" width="110" height="40" class="box"/>
+  <text x="175" y="475" text-anchor="middle" class="label">ProTra</text>
+
+  <!-- Bottom -->
+  <rect x="350" y="760" width="140" height="40" class="box"/>
+  <text x="420" y="785" text-anchor="middle" class="label">Filefront PC</text>
+
+  <rect x="520" y="760" width="80" height="40" class="box"/>
+  <text x="560" y="785" text-anchor="middle" class="label">KB</text>
+
+  <rect x="620" y="760" width="80" height="40" class="box"/>
+  <text x="660" y="785" text-anchor="middle" class="label">SC</text>
+
+  <rect x="720" y="760" width="110" height="40" class="box"/>
+  <text x="775" y="785" text-anchor="middle" class="label">Phone PC</text>
+
+  <!-- Right -->
+  <rect x="900" y="300" width="160" height="40" class="box"/>
+  <text x="980" y="325" text-anchor="middle" class="label">Consume API</text>
+
+  <rect x="900" y="360" width="160" height="40" class="box"/>
+  <text x="980" y="385" text-anchor="middle" class="label">Risk Categories</text>
+
+  <rect x="900" y="420" width="180" height="40" class="box"/>
+  <text x="990" y="445" text-anchor="middle" class="label">CERSAI Reporting</text>
+
+  <rect x="900" y="480" width="180" height="40" class="box"/>
+  <text x="990" y="505" text-anchor="middle" class="label">Reports for Audit</text>
+
+  <!-- Arrows -->
+  <line x1="400" y1="120" x2="550" y2="330" class="arrow"/>
+  <line x1="520" y1="120" x2="580" y2="330" class="arrow"/>
+  <line x1="645" y1="120" x2="620" y2="330" class="arrow"/>
+  <line x1="785" y1="120" x2="650" y2="330" class="arrow"/>
+
+  <line x1="230" y1="400" x2="480" y2="450" class="arrow"/>
+  <line x1="230" y1="470" x2="480" y2="470" class="arrow"/>
+
+  <line x1="420" y1="760" x2="560" y2="570" class="arrow"/>
+  <line x1="560" y1="760" x2="600" y2="570" class="arrow"/>
+  <line x1="660" y1="760" x2="630" y2="570" class="arrow"/>
+  <line x1="775" y1="760" x2="670" y2="570" class="arrow"/>
+
+  <line x1="720" y1="430" x2="900" y2="320" class="arrow"/>
+  <line x1="720" y1="450" x2="900" y2="380" class="arrow"/>
+  <line x1="720" y1="470" x2="900" y2="440" class="arrow"/>
+  <line x1="720" y1="490" x2="900" y2="500" class="arrow"/>
+</svg>

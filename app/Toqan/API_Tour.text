@@ -1,0 +1,124 @@
+In this tutorial, we will guide you through:
+
+Setup: Set up a basic space and retrieve your API key
+Create Conversation: Create a simple conversation and retrieve the result
+Uploading and using a File: Ask a question about a file where you will experience uploading a file and attaching the file to the conversation
+Continue Conversation: Continue a conversation and retrieve the result
+Downloading a result file: Continue a conversation with a question that will generate a file which we will then download
+Setup
+
+Go to https://work.toqan.ai/spaces/create to create a new space. Put the word general in the text area to create a universal space. Go to the API tab to create an API key. The API key starts with sk_. Copy the value of the API key and store it carefully. Within the space, you can configure your prompt and system and/or custom tools. You can try out some conversations and further tweak your settings in the Toqan web interface. When you are all set, generate an API key which you will need to make API calls to Toqan.
+
+Create conversation
+
+Create your first API request in which we will greet Toqan:
+
+sh
+
+curl --request POST      
+     --url https://api.coco.prod.toqan.ai/api/create_conversation      
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      
+     --header 'accept: */*'      
+     --header 'content-type: application/json'      
+     --data '{
+       "user_message": "hi"
+     }'
+The response should be a 200 OK with the conversation_id and request_id in the JSON body. Use these IDs to retrieve the result to your query in the following curl:
+
+sh
+
+curl --request GET     
+     --url https://api.coco.prod.toqan.ai/api/get_answer  
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      
+     --header 'accept: */*'      
+     --header 'content-type: application/json'      
+     --data '{
+       "conversation_id": "<YOUR_CONVERSATION_ID_HERE>",
+       "request_id": "<YOUR_REQUEST_ID_HERE>"
+     }'
+The response will include the current status of your request:
+
+in_progress: Request is being processed
+finished: Request has been successfully completed, and answer is included
+error: Request has failed
+Get conversation history
+
+You can also get the full conversation history by using the conversation_id in the following curl:
+
+sh
+
+curl --request POST     
+     --url https://api.coco.prod.toqan.ai/api/find_conversation      
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      
+     --header 'accept: */*'      
+     --header 'content-type: application/json'      
+     --data '{
+       "conversation_id": "<YOUR_CONVERSATION_ID_HERE>"
+     }'
+This curl will return the full conversation; the last entry in the JSON array will be the result of your latest query.
+
+This is particularly useful for long-running operations or when you need to track the progress of file processing or complex conversations.
+
+Uploading and using a File
+
+Next, we will add a file to Toqan to be later used in the continuation of this conversation. First, we will create an upload URL which we can later use to upload the file to:
+
+sh
+
+curl --request PUT      
+     --url https://api.coco.prod.toqan.ai/api/upload_file      
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      
+     --header 'accept: */*' 
+     -F 'file=@github.com/lorum_ipsum.txt'
+Take the file_id from the result, we will need this later in the continue conversation.
+
+Continue conversation
+
+We will now continue the conversation by asking a question about the file. Use the conversation_id which we got from starting the conversation and the file_id from the earlier upload.
+
+sh
+
+curl --request POST      
+     --url https://api.coco.prod.toqan.ai/api/continue_conversation      
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      
+     --header 'accept: */*'      
+     --header 'content-type: application/json'      
+     --data '{
+       "conversation_id": "<YOUR_CONVERSATION_ID_HERE>",
+       "private_user_files": [
+         {
+           "id": "<YOUR_FILE_ID_HERE>"
+         }
+       ],
+       "user_message": "what is in the file"
+     }'
+Retrieve the result to your query in the following curl:
+
+sh
+
+curl --request POST      \
+     --url https://api.coco.prod.toqan.ai/api/get_answer      \
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      \
+     --header 'accept: */*'      \
+     --header 'content-type: application/json'      \
+     --data '{
+       "conversation_id": "<YOUR_CONVERSATION_ID_HERE>",
+       "request_id": "<YOUR_REQUEST_ID_HERE>"
+     }'
+Downloading the result file
+
+You can now download the file again with the following curl command:
+
+sh
+
+curl --request GET     
+     --url https://api.coco.prod.toqan.ai/api/download_file      
+     --header 'X-Api-Key: <YOUR_API_KEY_HERE>'      
+     --header 'accept: */*'      
+     --header 'content-type: application/json'      
+     --data '{
+       "conversation_id": "<YOUR_CONVERSATION_ID_HERE>",
+       "file_name": "lorum_ipsum.txt"
+     }'
+     --output lorum_ipsum.txt
+     

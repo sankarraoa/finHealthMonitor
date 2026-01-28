@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payroll Entries - FinHealthMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>FinHealthMonitor</h1>
+            <div class="header-actions">
+                {% if tenant_name %}
+                <span class="tenant-name">Organization: {{ tenant_name }}</span>
+                {% endif %}
+                <div class="dropdown">
+                    <button class="dropbtn">Menu ▼</button>
+                    <div class="dropdown-content">
+                        <a href="/home">Home</a>
+                        <a href="/settings">Settings</a>
+                        <a href="/payroll-risk">Payroll Risk</a>
+                        <a href="/accounts">Chart of Account</a>
+                        <a href="/invoices">Outstanding Invoices</a>
+                        <a href="/manual-journals">Manual Journals</a>
+                        <a href="/bank-transactions">Bank Transactions</a>
+                    </div>
+                </div>
+                {% if tenant_name %}
+                <a href="/logout" class="btn btn-secondary">Logout</a>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="content-section">
+            <h2>Create Payroll Journal Entries</h2>
+            
+            {% if error %}
+            <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+
+            {% if summary %}
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                <h3>Summary</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px;"><strong>Total Periods:</strong></td>
+                        <td style="padding: 8px;">{{ summary.total_periods }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px;"><strong>Successfully Created:</strong></td>
+                        <td style="padding: 8px; color: #28a745;">{{ summary.created }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px;"><strong>Errors:</strong></td>
+                        <td style="padding: 8px; color: #dc3545;">{{ summary.errors }}</td>
+                    </tr>
+                </table>
+                
+                <h4 style="margin-top: 20px;">Employee Details</h4>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <thead>
+                        <tr style="background: #e9ecef;">
+                            <th style="padding: 10px; text-align: left; border: 1px solid #dee2e6;">Employee</th>
+                            <th style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">Gross Salary</th>
+                            <th style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">Tax (20%)</th>
+                            <th style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">Super (10%)</th>
+                            <th style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">Net Pay</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for emp in summary.employees %}
+                        <tr>
+                            <td style="padding: 10px; border: 1px solid #dee2e6;">{{ emp.name }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(emp.gross) }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(emp.tax) }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(emp.super) }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(emp.net) }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr style="background: #e9ecef; font-weight: bold;">
+                            <td style="padding: 10px; border: 1px solid #dee2e6;">Total</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(summary.totals.gross) }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(summary.totals.tax) }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(summary.totals.super) }}</td>
+                            <td style="padding: 10px; text-align: right; border: 1px solid #dee2e6;">${{ "%.2f"|format(summary.totals.net) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if created_journals %}
+            <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="color: #155724; margin-top: 0;">Successfully Created Journals</h3>
+                {% for journal in created_journals %}
+                <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 4px; border-left: 4px solid #28a745;">
+                    <strong>Period {{ journal.period }} - {{ journal.date }}</strong>
+                    <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px; white-space: pre-wrap; font-size: 0.9em;">{{ journal.result }}</pre>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if errors %}
+            <div style="background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="color: #721c24; margin-top: 0;">Errors</h3>
+                <ul style="color: #721c24;">
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div style="margin-top: 30px;">
+                <a href="/pe" class="btn btn-primary">Create Again</a>
+                <a href="/home" class="btn btn-secondary">Back to Home</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

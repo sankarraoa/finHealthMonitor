@@ -5,3 +5,12 @@ node_modules/
 __pycache__/
 *.pyc
 .env
+
+# Cache and generated files
+cache/
+prompts/sent/
+
+# git commands 
+# git add .
+# git commit -m "Describe your change"
+# git push

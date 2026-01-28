@@ -3,7 +3,7 @@ import subprocess
 import json
 import asyncio
 import os
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 import logging
 from pathlib import Path
 
@@ -134,70 +134,176 @@ class XeroMCPClient:
         self._request_id += 1
         return self._request_id
     
-    async def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def _check_and_restart_process(self) -> bool:
         """
-        Send a JSON-RPC request to the MCP server.
+        Check if the MCP server process is alive and restart it if needed.
+        
+        Returns:
+            True if process was restarted, False if it was already alive
+        """
+        if not self.process:
+            logger.warning("MCP server process not started, initializing...")
+            await self.initialize()
+            return True
+        
+        # Check if process is still alive
+        if self.process.poll() is not None:
+            exit_code = self.process.returncode
+            logger.warning(f"MCP server process exited with code: {exit_code}, restarting...")
+            
+            # Try to read stderr for error details
+            try:
+                stderr_output = self.process.stderr.read()
+                if stderr_output:
+                    logger.error(f"MCP server stderr: {stderr_output}")
+            except Exception:
+                pass
+            
+            # Clean up old process
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                try:
+                    self.process.kill()
+                    self.process.wait(timeout=1)
+                except Exception:
+                    pass
+            
+            self.process = None
+            self._initialized = False
+            
+            # Restart the process
+            await self.initialize()
+            return True
+        
+        return False
+    
+    async def _send_request(self, request: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        """
+        Send a JSON-RPC request to the MCP server with automatic retry and process restart.
         
         Args:
             request: JSON-RPC request dictionary
+            max_retries: Maximum number of retry attempts (default: 3)
             
         Returns:
             JSON-RPC response dictionary
         """
-        if not self.process:
-            raise RuntimeError("MCP server process not started")
+        for attempt in range(max_retries):
+            try:
+                # Check and restart process if needed
+                await self._check_and_restart_process()
+                
+                if not self.process:
+                    raise RuntimeError("MCP server process not started")
+                
+                request_id = request.get("id", "unknown")
+                method = request.get("method", "unknown")
+                logger.debug(f"Sending MCP request (ID: {request_id}, Method: {method}, Attempt: {attempt + 1})")
+                
+                # Send request
+                request_json = json.dumps(request) + "\n"
+                try:
+                    self.process.stdin.write(request_json)
+                    self.process.stdin.flush()
+                    logger.debug(f"Request sent: {method}")
+                except (BrokenPipeError, OSError) as e:
+                    error_str = str(e)
+                    logger.warning(f"Broken pipe or OS error writing to MCP server (attempt {attempt + 1}/{max_retries}): {error_str}")
+                    
+                    # Check if process died
+                    if self.process.poll() is not None:
+                        logger.warning("Process died, will restart on next attempt")
+                        self.process = None
+                        self._initialized = False
+                    
+                    # Retry with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                        logger.info(f"Waiting {wait_time:.1f}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise RuntimeError(f"Failed to send request to MCP server after {max_retries} attempts: {error_str}")
+                except Exception as e:
+                    logger.error(f"Unexpected error writing to MCP server stdin: {str(e)}")
+                    raise RuntimeError(f"Failed to send request to MCP server: {str(e)}")
+                
+                # Read response (non-blocking)
+                try:
+                    response_line = await asyncio.to_thread(self.process.stdout.readline)
+                    if not response_line:
+                        # Check if process is still alive
+                        if self.process.poll() is not None:
+                            exit_code = self.process.returncode
+                            logger.warning(f"MCP server process exited with code: {exit_code}")
+                            # Try to read stderr for error details
+                            try:
+                                stderr_output = self.process.stderr.read()
+                                if stderr_output:
+                                    logger.error(f"MCP server stderr: {stderr_output}")
+                            except Exception:
+                                pass
+                            
+                            # Retry if we have attempts left
+                            if attempt < max_retries - 1:
+                                self.process = None
+                                self._initialized = False
+                                wait_time = 0.5 * (2 ** attempt)
+                                logger.info(f"Process died, waiting {wait_time:.1f}s before retry...")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                raise RuntimeError(f"MCP server process exited unexpectedly with code {exit_code}")
+                        raise RuntimeError("No response from MCP server (process still running)")
+                    
+                    logger.debug(f"Response received (length: {len(response_line)} chars)")
+                    response = json.loads(response_line.strip())
+                    
+                    # Check for errors
+                    if "error" in response:
+                        error = response["error"]
+                        error_msg = f"MCP error: {error.get('message', 'Unknown error')}"
+                        error_code = error.get('code', 'unknown')
+                        logger.error(f"MCP server returned error (code: {error_code}): {error_msg}")
+                        raise RuntimeError(error_msg)
+                    
+                    return response
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse MCP server response: {str(e)}")
+                    logger.error(f"Response line: {response_line[:200] if 'response_line' in locals() else 'N/A'}...")
+                    
+                    # Retry on JSON decode errors if we have attempts left
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (2 ** attempt)
+                        logger.info(f"JSON decode error, waiting {wait_time:.1f}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise RuntimeError(f"Invalid JSON response from MCP server: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error reading from MCP server: {str(e)}")
+                    # Retry on other errors if we have attempts left
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (2 ** attempt)
+                        logger.info(f"Read error, waiting {wait_time:.1f}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise
+            except RuntimeError as e:
+                # If it's a process-related error and we have retries left, try again
+                if "process" in str(e).lower() and attempt < max_retries - 1:
+                    wait_time = 0.5 * (2 ** attempt)
+                    logger.info(f"Process error, waiting {wait_time:.1f}s before retry...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
         
-        request_id = request.get("id", "unknown")
-        method = request.get("method", "unknown")
-        logger.debug(f"Sending MCP request (ID: {request_id}, Method: {method})")
-        
-        # Send request
-        request_json = json.dumps(request) + "\n"
-        try:
-            self.process.stdin.write(request_json)
-            self.process.stdin.flush()
-            logger.debug(f"Request sent: {method}")
-        except Exception as e:
-            logger.error(f"Error writing to MCP server stdin: {str(e)}")
-            raise RuntimeError(f"Failed to send request to MCP server: {str(e)}")
-        
-        # Read response (non-blocking)
-        try:
-            response_line = await asyncio.to_thread(self.process.stdout.readline)
-            if not response_line:
-                # Check if process is still alive
-                if self.process.poll() is not None:
-                    exit_code = self.process.returncode
-                    logger.error(f"MCP server process exited with code: {exit_code}")
-                    # Try to read stderr for error details
-                    try:
-                        stderr_output = self.process.stderr.read()
-                        if stderr_output:
-                            logger.error(f"MCP server stderr: {stderr_output}")
-                    except Exception:
-                        pass
-                    raise RuntimeError(f"MCP server process exited unexpectedly with code {exit_code}")
-                raise RuntimeError("No response from MCP server (process still running)")
-            
-            logger.debug(f"Response received (length: {len(response_line)} chars)")
-            response = json.loads(response_line.strip())
-            
-            # Check for errors
-            if "error" in response:
-                error = response["error"]
-                error_msg = f"MCP error: {error.get('message', 'Unknown error')}"
-                error_code = error.get('code', 'unknown')
-                logger.error(f"MCP server returned error (code: {error_code}): {error_msg}")
-                raise RuntimeError(error_msg)
-            
-            return response
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse MCP server response: {str(e)}")
-            logger.error(f"Response line: {response_line[:200]}...")
-            raise RuntimeError(f"Invalid JSON response from MCP server: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error reading from MCP server: {str(e)}")
-            raise
+        # Should never reach here, but just in case
+        raise RuntimeError(f"Failed to send request to MCP server after {max_retries} attempts")
     
     async def _send_notification(self, notification: Dict[str, Any]) -> None:
         """
@@ -434,7 +540,7 @@ class XeroMCPClient:
         logger.info(f"Parsed {len(invoices)} invoices from {len(content)} content items")
         return invoices
     
-    async def get_invoices(self, where: Optional[str] = None, order: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_invoices(self, where: Optional[str] = None, order: Optional[str] = None, progress_callback: Optional[Callable[[int, str], None]] = None) -> List[Dict[str, Any]]:
         """
         Get invoices from Xero via MCP server with pagination.
         
@@ -457,10 +563,23 @@ class XeroMCPClient:
         max_pages = 1000  # Safety limit to prevent infinite loops
         
         try:
+            # Estimate total pages (we don't know upfront, so we'll estimate based on first page)
+            estimated_total_pages = None
+            
             while page <= max_pages:
                 # Call tool with page number (MCP server doesn't support 'where' parameter)
                 arguments = {"page": page}
                 logger.info(f"Fetching invoices page {page}...")
+                
+                # Update progress: 10% for initialization, then 10-90% for pagination
+                if progress_callback:
+                    if estimated_total_pages:
+                        # We have an estimate, calculate progress
+                        progress = min(10 + int((page / estimated_total_pages) * 80), 90)
+                    else:
+                        # No estimate yet, show incremental progress
+                        progress = min(10 + (page * 5), 85)
+                    progress_callback(progress, f"Fetching page {page}...")
                 
                 result = await self.call_tool("list-invoices", arguments)
                 
@@ -474,10 +593,14 @@ class XeroMCPClient:
                 if page == 1 and not invoices:
                     logger.warning("No invoices found on first page - this might indicate an issue")
                     # Still break to avoid infinite loop, but log a warning
+                    if progress_callback:
+                        progress_callback(100, "No invoices found")
                     break
                 
                 if not invoices:
                     logger.info(f"No invoices found on page {page}, stopping pagination")
+                    if progress_callback:
+                        progress_callback(95, "Processing invoices...")
                     break  # No more invoices
                 
                 logger.info(f"Parsed {len(invoices)} invoices from page {page}")
@@ -486,11 +609,21 @@ class XeroMCPClient:
                 # If we got less than 10 invoices, we've reached the last page
                 if len(invoices) < 10:
                     logger.info(f"Reached last page (got {len(invoices)} invoices, less than page size of 10)")
+                    if progress_callback:
+                        progress_callback(95, "Processing invoices...")
                     break
+                
+                # Estimate total pages based on first page size (rough estimate)
+                if page == 1 and len(invoices) == 10:
+                    # Assume there might be more pages, estimate conservatively
+                    estimated_total_pages = max(5, len(invoices) // 10 + 2)
                 
                 page += 1
             
             logger.info(f"Fetched {len(all_invoices)} total invoices across {page} page(s)")
+            
+            if progress_callback:
+                progress_callback(95, "Filtering invoices...")
             
             # Filter by status if requested (client-side filtering)
             if where and "Status" in where:
@@ -504,7 +637,12 @@ class XeroMCPClient:
                         if inv.get("Status", "").upper() == target_status.upper()
                     ]
                     logger.info(f"Filtered to {len(filtered)} invoices with status '{target_status}'")
+                    if progress_callback:
+                        progress_callback(100, "Complete")
                     return filtered
+            
+            if progress_callback:
+                progress_callback(100, "Complete")
             
             return all_invoices
             
@@ -512,17 +650,26 @@ class XeroMCPClient:
             logger.error(f"Error fetching invoices: {str(e)}", exc_info=True)
             return []
     
-    async def get_outstanding_invoices(self) -> List[Dict[str, Any]]:
+    async def get_outstanding_invoices(self, progress_callback: Optional[Callable[[int, str], None]] = None) -> List[Dict[str, Any]]:
         """
         Get outstanding invoices (excluding voided and deleted).
+        
+        Args:
+            progress_callback: Optional callback function(progress: int, message: str) for progress updates
         
         Returns:
             List of invoices that are not voided or deleted
         """
         logger.info("Getting outstanding invoices (excluding VOIDED and DELETED)")
         
+        if progress_callback:
+            progress_callback(0, "Initializing...")
+        
         # Fetch all invoices with pagination
-        all_invoices = await self.get_invoices()
+        all_invoices = await self.get_invoices(progress_callback=progress_callback)
+        
+        if progress_callback:
+            progress_callback(98, "Filtering outstanding invoices...")
         
         # Filter out voided and deleted invoices
         valid_statuses = ["DRAFT", "SUBMITTED", "AUTHORISED", "PAID"]
@@ -532,7 +679,172 @@ class XeroMCPClient:
         ]
         
         logger.info(f"Filtered to {len(outstanding)} outstanding invoices (excluded VOIDED and DELETED)")
+        
+        if progress_callback:
+            progress_callback(100, "Complete")
+        
         return outstanding
+    
+    async def get_manual_journals(
+        self, 
+        manual_journal_id: Optional[str] = None,
+        modified_after: Optional[str] = None,
+        page: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get manual journals from Xero via MCP server.
+        
+        Args:
+            manual_journal_id: Optional ID of specific journal to retrieve
+            modified_after: Optional date (YYYY-MM-DD) to filter journals modified after this date
+            page: Optional page number for pagination
+        
+        Returns:
+            List of manual journals
+        """
+        try:
+            params = {}
+            if manual_journal_id:
+                params["manualJournalId"] = manual_journal_id
+            if modified_after:
+                params["modifiedAfter"] = modified_after
+            if page:
+                params["page"] = page
+            
+            result = await self.call_tool("list-manual-journals", params)
+            
+            # Parse the text response to extract journal data
+            if isinstance(result, dict) and "content" in result:
+                content = result["content"]
+                journals = []
+                
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text = item.get("text", "")
+                        # Parse journal data from text format
+                        if "Manual Journal ID:" in text:
+                            journal_data = self._parse_manual_journal_text(text)
+                            if journal_data:
+                                journals.append(journal_data)
+                
+                logger.info(f"Retrieved {len(journals)} manual journals")
+                return journals
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error fetching manual journals: {str(e)}", exc_info=True)
+            return []
+    
+    def _parse_manual_journal_text(self, text: str) -> Optional[Dict[str, Any]]:
+        """Parse manual journal data from MCP server text response."""
+        try:
+            journal = {}
+            lines = text.split("\n")
+            
+            for line in lines:
+                if "Manual Journal ID:" in line:
+                    journal["manualJournalID"] = line.split(":")[1].strip()
+                elif "Description:" in line:
+                    journal["narration"] = line.split(":", 1)[1].strip()
+                elif "Date:" in line:
+                    journal["date"] = line.split(":", 1)[1].strip()
+                elif "Status:" in line:
+                    journal["status"] = line.split(":", 1)[1].strip()
+                elif "Line Amount:" in line:
+                    # This is part of journal lines - we'll collect them separately
+                    pass
+            
+            return journal if journal else None
+            
+        except Exception as e:
+            logger.error(f"Error parsing manual journal text: {str(e)}")
+            return None
+    
+    async def get_bank_transactions(
+        self,
+        bank_account_id: Optional[str] = None,
+        page: int = 1
+    ) -> List[Dict[str, Any]]:
+        """
+        Get bank transactions from Xero via MCP server.
+        
+        Args:
+            bank_account_id: Optional ID of specific bank account to filter
+            page: Page number for pagination (default: 1)
+        
+        Returns:
+            List of bank transactions
+        """
+        try:
+            params = {"page": page}
+            if bank_account_id:
+                params["bankAccountId"] = bank_account_id
+            
+            result = await self.call_tool("list-bank-transactions", params)
+            
+            # Parse the text response to extract transaction data
+            if isinstance(result, dict) and "content" in result:
+                content = result["content"]
+                transactions = []
+                
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text = item.get("text", "")
+                        # Parse transaction data from text format
+                        if "Bank Transaction ID:" in text:
+                            transaction_data = self._parse_bank_transaction_text(text)
+                            if transaction_data:
+                                transactions.append(transaction_data)
+                
+                logger.info(f"Retrieved {len(transactions)} bank transactions (page {page})")
+                return transactions
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error fetching bank transactions: {str(e)}", exc_info=True)
+            return []
+    
+    def _parse_bank_transaction_text(self, text: str) -> Optional[Dict[str, Any]]:
+        """Parse bank transaction data from MCP server text response."""
+        try:
+            transaction = {}
+            lines = text.split("\n")
+            
+            for line in lines:
+                if "Bank Transaction ID:" in line:
+                    transaction["bankTransactionID"] = line.split(":")[1].strip()
+                elif "Bank Account:" in line:
+                    parts = line.split("(")
+                    if len(parts) > 1:
+                        transaction["bankAccountName"] = parts[0].split(":")[1].strip()
+                        transaction["bankAccountID"] = parts[1].rstrip(")").strip()
+                elif "Contact:" in line:
+                    parts = line.split("(")
+                    if len(parts) > 1:
+                        transaction["contactName"] = parts[0].split(":")[1].strip()
+                        transaction["contactID"] = parts[1].rstrip(")").strip()
+                elif "Reference:" in line:
+                    transaction["reference"] = line.split(":", 1)[1].strip()
+                elif "Date:" in line:
+                    transaction["date"] = line.split(":", 1)[1].strip()
+                elif "Sub Total:" in line:
+                    transaction["subTotal"] = line.split(":", 1)[1].strip()
+                elif "Total Tax:" in line:
+                    transaction["totalTax"] = line.split(":", 1)[1].strip()
+                elif "Total:" in line:
+                    transaction["total"] = line.split(":", 1)[1].strip()
+                elif "Reconciled" in line or "Unreconciled" in line:
+                    transaction["isReconciled"] = "Reconciled" in line
+                elif "Currency Code:" in line:
+                    transaction["currencyCode"] = line.split(":", 1)[1].strip()
+            
+            return transaction if transaction else None
+            
+        except Exception as e:
+            logger.error(f"Error parsing bank transaction text: {str(e)}")
+            return None
     
     async def get_accounts(self) -> List[Dict[str, Any]]:
         """
