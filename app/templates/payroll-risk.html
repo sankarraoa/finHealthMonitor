@@ -1,80 +1,353 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payroll Risk - FinHealthMonitor</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="container">
-        <header class="header">
-            <h1>FinHealthMonitor</h1>
-            <div class="header-actions">
-                <span class="tenant-name">Organization: {{ tenant_name }}</span>
-                <div class="dropdown">
-                    <button class="dropbtn">Menu ▼</button>
-                    <div class="dropdown-content">
-                        <a href="/">Home</a>
-                        <a href="/settings">Settings</a>
-                        <a href="/payroll-risk" class="active">Payroll Risk</a>
-                        <a href="/accounts">Chart of Account</a>
-                        <a href="/invoices">Outstanding Invoices</a>
-                        <a href="/manual-journals">Manual Journals</a>
-                        <a href="/bank-transactions">Bank Transactions</a>
-                    </div>
-                </div>
-                <a href="/logout" class="btn btn-secondary">Logout</a>
-            </div>
-        </header>
+{% extends "base.html" %}
 
+{% block title %}Payroll Risk - FinHealthMonitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .payroll-risk-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .new-analysis-btn {
+        background: #667eea;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+    }
+    
+    .new-analysis-btn:hover {
+        background: #5568d3;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    .analyses-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    
+    .analyses-table thead {
+        background: #f8f9fa;
+    }
+    
+    .analyses-table th {
+        padding: 15px;
+        text-align: left;
+        font-weight: 600;
+        color: #333;
+        border-bottom: 2px solid #dee2e6;
+        font-size: 0.9em;
+        text-transform: uppercase;
+    }
+    
+    .analyses-table td {
+        padding: 15px;
+        border-bottom: 1px solid #dee2e6;
+        color: #333;
+    }
+    
+    .analyses-table tbody tr:hover {
+        background: #f8f9fa;
+        cursor: pointer;
+    }
+    
+    .analyses-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85em;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .status-running {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+    
+    .status-completed {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-failed {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .view-icon {
+        color: #667eea;
+        font-size: 1.2em;
+        text-decoration: none;
+    }
+    
+    .view-icon:hover {
+        color: #5568d3;
+    }
+    
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+    }
+    
+    .modal-content {
+        background-color: white;
+        margin: 5% auto;
+        padding: 30px;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 600px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .close {
+        color: #aaa;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+    
+    .close:hover {
+        color: #000;
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    .form-group select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 1em;
+    }
+    
+    .progress-container {
+        margin-top: 20px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .progress-bar {
+        width: 100%;
+        height: 30px;
+        background: #e9ecef;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 10px;
+    }
+    
+    .progress-fill {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        height: 100%;
+        width: 0%;
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="content-section">
+    {% if view_mode == "list" %}
+        <!-- List View -->
+        <div class="payroll-risk-header">
+            <h2 style="margin: 0;">Payroll Risk Early Warning</h2>
+            <button class="new-analysis-btn" onclick="openNewAnalysisModal()">+ New Analysis</button>
+        </div>
+        
         {% if error %}
-        <div class="error-message">
+        <div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
             <strong>Error:</strong> {{ error }}
         </div>
         {% endif %}
-
-        <div class="content-section">
-            <h2>Payroll Risk Early Warning</h2>
-            <p>Analyze your cash position to determine if projected cash will cover the next payroll.</p>
-            
-            {% if run_analysis and not has_result and not error %}
-            <!-- Loading State with Progress -->
-            {% if async_mode %}
-            <div id="loading-indicator" style="margin-top: 30px; text-align: center; padding: 40px;">
-                <div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-                <h3 style="color: #667eea; margin-bottom: 10px;">Payroll Risk Analysis in Progress</h3>
-                <p id="progress-message" style="color: #666; margin-bottom: 20px; font-size: 1.1em;">🚀 Starting payroll risk analysis...</p>
-                <div style="width: 100%; max-width: 500px; margin: 0 auto; background: #e9ecef; border-radius: 10px; height: 30px; overflow: hidden; position: relative;">
-                    <div id="progress-bar" style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
-                        <span id="progress-percentage" style="color: white; font-weight: 600; font-size: 0.9em;">0%</span>
+        
+        {% if analyses %}
+        <table class="analyses-table">
+            <thead>
+                <tr>
+                    <th>Date & Time</th>
+                    <th>Connection</th>
+                    <th>Tenant</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for analysis in analyses %}
+                <tr onclick="window.location.href='/payroll-risk/{{ analysis.id }}'">
+                    <td>{{ analysis.initiated_at[:19].replace('T', ' ') }}</td>
+                    <td>{{ analysis.connection_name }}</td>
+                    <td>{{ analysis.tenant_name or '-' }}</td>
+                    <td>
+                        <span class="status-badge status-{{ analysis.status }}">
+                            {{ analysis.status }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if analysis.status == "running" %}
+                            {{ analysis.progress or 0 }}%
+                        {% elif analysis.status == "completed" %}
+                            100%
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/payroll-risk/{{ analysis.id }}" class="view-icon" onclick="event.stopPropagation();">👁️</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="text-align: center; padding: 60px 20px; color: #666;">
+            <p style="font-size: 1.2em; margin-bottom: 20px;">No payroll risk analyses yet.</p>
+            <button class="new-analysis-btn" onclick="openNewAnalysisModal()">Start Your First Analysis</button>
+        </div>
+        {% endif %}
+        
+        <!-- New Analysis Modal -->
+        <div id="newAnalysisModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 style="margin: 0;">Start New Payroll Risk Analysis</h3>
+                    <span class="close" onclick="closeNewAnalysisModal()">&times;</span>
+                </div>
+                <form action="/payroll-risk/new" method="POST" id="newAnalysisForm">
+                    <div class="form-group">
+                        <label for="connection_id">Connection *</label>
+                        <select name="connection_id" id="connection_id" required onchange="updateTenantSelector()">
+                            <option value="">Select a connection...</option>
+                            {% if connections %}
+                                {% for conn in connections %}
+                                    {% if conn.software == "xero" %}
+                                    <option value="{{ conn.id }}" data-software="{{ conn.software }}">
+                                        {{ conn.name }}
+                                    </option>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group" id="tenantGroup" style="display: none;">
+                        <label for="tenant_id">Tenant</label>
+                        <select name="tenant_id" id="tenant_id">
+                            <option value="">Select a tenant...</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 30px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeNewAnalysisModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Start Analysis</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+    {% elif view_mode == "details" %}
+        <!-- Details View -->
+        <div style="margin-bottom: 20px;">
+            <a href="/payroll-risk" style="color: #667eea; text-decoration: none;">← Back to List</a>
+        </div>
+        
+        <h2>Payroll Risk Analysis Details</h2>
+        
+        <!-- Analysis Info -->
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div>
+                    <strong>Connection:</strong> {{ analysis.connection_name }}
+                </div>
+                <div>
+                    <strong>Tenant:</strong> {{ analysis.tenant_name or 'N/A' }}
+                </div>
+                <div>
+                    <strong>Initiated:</strong> {{ analysis.initiated_at[:19].replace('T', ' ') }}
+                </div>
+                {% if analysis.completed_at %}
+                <div>
+                    <strong>Completed:</strong> {{ analysis.completed_at[:19].replace('T', ' ') }}
+                </div>
+                {% endif %}
+                <div>
+                    <strong>Status:</strong> 
+                    <span class="status-badge status-{{ analysis.status }}">
+                        {{ analysis.status }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        {% if analysis.status == "running" %}
+            <!-- Progress View -->
+            <div class="progress-container">
+                <h3>Analysis in Progress</h3>
+                <p id="progress-message">{{ analysis.progress_message or "Initializing..." }}</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: {{ analysis.progress or 0 }}%;">
+                        {{ analysis.progress or 0 }}%
                     </div>
                 </div>
-                <p style="color: #999; font-size: 0.9em; margin-top: 15px;">This may take 60-90 seconds. Please wait...</p>
+                <p style="color: #666; margin-top: 10px; font-size: 0.9em;">This may take 60-90 seconds. You can navigate away and come back later.</p>
             </div>
-            <style>
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            </style>
+            
             <script>
                 (function() {
-                    const sessionId = "{{ session_id }}";
+                    const analysisId = "{{ analysis.id }}";
                     let pollInterval;
                     let pollCount = 0;
-                    const maxPolls = 600; // 10 minutes max (1 poll per second)
+                    const maxPolls = 600; // 10 minutes max
                     
                     function updateProgress(progress, message) {
-                        const progressBar = document.getElementById('progress-bar');
-                        const progressPercentage = document.getElementById('progress-percentage');
+                        const progressFill = document.getElementById('progress-fill');
                         const progressMessage = document.getElementById('progress-message');
                         
-                        if (progressBar) {
-                            progressBar.style.width = progress + '%';
-                        }
-                        if (progressPercentage) {
-                            progressPercentage.textContent = progress + '%';
+                        if (progressFill) {
+                            progressFill.style.width = progress + '%';
+                            progressFill.textContent = progress + '%';
                         }
                         if (progressMessage) {
                             progressMessage.textContent = message;
@@ -89,23 +362,19 @@
                             return;
                         }
                         
-                        fetch('/payroll-risk/progress')
+                        fetch(`/payroll-risk/${analysisId}/progress`)
                             .then(response => response.json())
                             .then(data => {
                                 updateProgress(data.progress || 0, data.message || 'Loading...');
                                 
-                                if (data.status === 'complete') {
+                                if (data.status === 'completed') {
                                     clearInterval(pollInterval);
-                                    // Reload the page to show results
                                     setTimeout(() => {
                                         window.location.reload();
                                     }, 500);
-                                } else if (data.status === 'error') {
+                                } else if (data.status === 'failed') {
                                     clearInterval(pollInterval);
                                     updateProgress(0, 'Error: ' + (data.error || 'Unknown error'));
-                                    setTimeout(() => {
-                                        window.location.href = '/payroll-risk?run=true&async=false';
-                                    }, 2000);
                                 }
                             })
                             .catch(error => {
@@ -113,189 +382,207 @@
                             });
                     }
                     
-                    // Start polling immediately, then every second
                     pollProgress();
                     pollInterval = setInterval(pollProgress, 1000);
                 })();
             </script>
-            {% else %}
-            <!-- Loading State (synchronous mode) -->
-            <div id="loading-indicator" style="margin-top: 30px; text-align: center; padding: 40px;">
-                <div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-                <h3 style="color: #667eea; margin-bottom: 10px;">Analysis in Progress</h3>
-                <p style="color: #666; margin-bottom: 5px;">Gathering data from Xero...</p>
-                <p style="color: #666; margin-bottom: 5px;">Analyzing payroll risk with AI...</p>
-                <p style="color: #999; font-size: 0.9em; margin-top: 20px;">This may take 30-60 seconds. Please wait...</p>
+        
+        {% elif analysis.status == "failed" %}
+            <!-- Error View -->
+            <div style="background: #f8d7da; color: #721c24; padding: 20px; border-radius: 8px;">
+                <h3>Analysis Failed</h3>
+                <p><strong>Error:</strong> {{ analysis.error_message or "Unknown error" }}</p>
             </div>
-            <style>
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            </style>
-            <script>
-                // Auto-refresh every 3 seconds while loading
-                setTimeout(function() {
-                    if (document.getElementById('loading-indicator')) {
-                        window.location.reload();
-                    }
-                }, 3000);
-            </script>
-            {% endif %}
-            {% elif not has_result %}
-            <div style="margin-top: 30px; text-align: center;">
-                <a href="/payroll-risk?run=true" class="btn btn-primary" style="font-size: 1.2em; padding: 15px 30px;">
-                    Run Payroll Risk Analysis
-                </a>
-                <p style="margin-top: 20px; color: #666;">
-                    This will analyze your Xero data to assess payroll coverage risk.
-                </p>
+        
+        {% elif analysis.status == "completed" and analysis.result_data %}
+            <!-- Results View -->
+            {% set result = analysis.result_data %}
+            
+            <!-- Status Card -->
+            {% set health_value = result.health_status if result.health_status else 'Red' %}
+            <div class="status-card" style="background: {% if health_value == 'Green' %}#d4edda{% elif health_value == 'Yellow' %}#fff3cd{% else %}#f8d7da{% endif %}; 
+                border: 2px solid {% if health_value == 'Green' %}#28a745{% elif health_value == 'Yellow' %}#ffc107{% else %}#dc3545{% endif %}; 
+                border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="font-size: 3em;">
+                        {% if health_value == 'Green' %}✅{% elif health_value == 'Yellow' %}⚠️{% else %}🔴{% endif %}
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; color: {% if health_value == 'Green' %}#155724{% elif health_value == 'Yellow' %}#856404{% else %}#721c24{% endif %};">
+                            Status: {{ health_value }}
+                        </h3>
+                        {% if result.near_miss %}
+                        <p style="margin: 5px 0 0 0; color: #856404; font-weight: 600;">⚠️ Near Miss - Close to insufficient coverage</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="summary-stats" style="margin-bottom: 30px;">
+                <div class="stat-card">
+                    <div class="stat-label">Payroll Date</div>
+                    <div class="stat-value" style="font-size: 1.2em;">{{ result.payroll_date[:10] if result.payroll_date else 'N/A' }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Payroll Amount</div>
+                    <div class="stat-value">${{ "%.2f"|format(result.payroll_amount_with_buffer) if result.payroll_amount_with_buffer else '0.00' }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Current Cash</div>
+                    <div class="stat-value">${{ "%.2f"|format(result.current_cash_available) if result.current_cash_available else '0.00' }}</div>
+                </div>
+                <div class="stat-card stat-card-primary">
+                    <div class="stat-label">Coverage Ratio</div>
+                    <div class="stat-value">{{ "%.2f"|format(result.payroll_coverage_ratio) if result.payroll_coverage_ratio else '0.00' }}x</div>
+                </div>
+            </div>
+
+            <!-- Advisory Narrative -->
+            {% if result.advisory_narrative %}
+            <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; border-radius: 6px; margin-bottom: 30px;">
+                <h3 style="margin-top: 0; color: #333;">Advisory Summary</h3>
+                <p style="margin: 0; line-height: 1.6; color: #555;">{{ result.advisory_narrative }}</p>
             </div>
             {% endif %}
 
-            {% if result %}
-            <!-- Results Section -->
-            <div style="margin-top: 30px;">
-                <!-- Status Card -->
-                {% set health_value = result.health_status.value if result.health_status.value else 'Red' %}
-                <div class="status-card" style="background: {% if health_value == 'Green' %}#d4edda{% elif health_value == 'Yellow' %}#fff3cd{% else %}#f8d7da{% endif %}; 
-                    border: 2px solid {% if health_value == 'Green' %}#28a745{% elif health_value == 'Yellow' %}#ffc107{% else %}#dc3545{% endif %}; 
-                    border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <div style="font-size: 3em;">
-                            {% if health_value == 'Green' %}✅{% elif health_value == 'Yellow' %}⚠️{% else %}🔴{% endif %}
+            <!-- Risk Drivers -->
+            {% if result.key_risk_drivers %}
+            <div style="margin-bottom: 30px;">
+                <h3>Key Risk Drivers</h3>
+                <ul style="list-style-type: none; padding: 0;">
+                    {% for driver in result.key_risk_drivers %}
+                    <li style="padding: 10px; margin-bottom: 8px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                        {{ driver }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Recommended Actions -->
+            {% if result.recommended_actions %}
+            <div style="margin-bottom: 30px;">
+                <h3>Recommended Actions</h3>
+                <ol style="padding-left: 20px;">
+                    {% for action in result.recommended_actions %}
+                    <li style="padding: 8px 0; color: #333;">{{ action }}</li>
+                    {% endfor %}
+                </ol>
+            </div>
+            {% endif %}
+
+            <!-- Scenarios -->
+            {% if result.scenarios %}
+            <div style="margin-bottom: 30px;">
+                <h3>Cash Flow Scenarios</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    {% for scenario_name, scenario in result.scenarios.items() %}
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #dee2e6;">
+                        <div style="font-weight: 600; color: #667eea; margin-bottom: 10px; text-transform: capitalize;">
+                            {{ scenario_name }}
                         </div>
-                        <div>
-                            <h3 style="margin: 0; color: {% if health_value == 'Green' %}#155724{% elif health_value == 'Yellow' %}#856404{% else %}#721c24{% endif %};">
-                                Status: {{ health_value }}
-                            </h3>
-                            {% if result.near_miss %}
-                            <p style="margin: 5px 0 0 0; color: #856404; font-weight: 600;">⚠️ Near Miss - Close to insufficient coverage</p>
-                            {% endif %}
+                        <div style="font-size: 1.5em; font-weight: 700; color: #333;">
+                            ${{ "%.2f"|format(scenario.projected_cash) if scenario.projected_cash else '0.00' }}
+                        </div>
+                        <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                            Coverage: {{ "%.2f"|format(scenario.coverage_ratio) if scenario.coverage_ratio else '0.00' }}x
                         </div>
                     </div>
+                    {% endfor %}
                 </div>
+            </div>
+            {% endif %}
 
-                <!-- Key Metrics -->
-                <div class="summary-stats" style="margin-bottom: 30px;">
-                    <div class="stat-card">
-                        <div class="stat-label">Payroll Date</div>
-                        <div class="stat-value" style="font-size: 1.2em;">{{ result.payroll_date[:10] if result.payroll_date else 'N/A' }}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Payroll Amount</div>
-                        <div class="stat-value">${{ "%.2f"|format(result.payroll_amount_with_buffer) }}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Current Cash</div>
-                        <div class="stat-value">${{ "%.2f"|format(result.current_cash_available) }}</div>
-                    </div>
-                    <div class="stat-card stat-card-primary">
-                        <div class="stat-label">Coverage Ratio</div>
-                        <div class="stat-value">{{ "%.2f"|format(result.payroll_coverage_ratio) }}x</div>
-                    </div>
-                </div>
-
-                <!-- Advisory Narrative -->
-                {% if result.advisory_narrative %}
-                <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; border-radius: 6px; margin-bottom: 30px;">
-                    <h3 style="margin-top: 0; color: #333;">Advisory Summary</h3>
-                    <p style="margin: 0; line-height: 1.6; color: #555;">{{ result.advisory_narrative }}</p>
-                </div>
-                {% endif %}
-
-                <!-- Risk Drivers -->
-                {% if result.key_risk_drivers %}
-                <div style="margin-bottom: 30px;">
-                    <h3>Key Risk Drivers</h3>
-                    <ul style="list-style-type: none; padding: 0;">
-                        {% for driver in result.key_risk_drivers %}
-                        <li style="padding: 10px; margin-bottom: 8px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-                            {{ driver }}
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-
-                <!-- Recommended Actions -->
-                {% if result.recommended_actions %}
-                <div style="margin-bottom: 30px;">
-                    <h3>Recommended Actions</h3>
-                    <ol style="padding-left: 20px;">
-                        {% for action in result.recommended_actions %}
-                        <li style="padding: 8px 0; color: #333;">{{ action }}</li>
-                        {% endfor %}
-                    </ol>
-                </div>
-                {% endif %}
-
-                <!-- Scenarios -->
-                {% if result.scenarios %}
-                <div style="margin-bottom: 30px;">
-                    <h3>Cash Flow Scenarios</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        {% for scenario_name, scenario in result.scenarios.items() %}
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #dee2e6;">
-                            <div style="font-weight: 600; color: #667eea; margin-bottom: 10px; text-transform: capitalize;">
-                                {{ scenario_name }}
-                            </div>
-                            <div style="font-size: 1.5em; font-weight: 700; color: #333;">
-                                ${{ "%.2f"|format(scenario.projected_cash) }}
-                            </div>
-                            <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                                Coverage: {{ "%.2f"|format(scenario.coverage_ratio) }}x
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endif %}
-
-                <!-- Technical Details (Collapsible) -->
-                <details style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-                    <summary style="cursor: pointer; font-weight: 600; color: #667eea;">Technical Details</summary>
+            <!-- Technical Details (Collapsible) -->
+            <details style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                <summary style="cursor: pointer; font-weight: 600; color: #667eea;">Technical Details</summary>
+                <div style="margin-top: 15px;">
+                    <p><strong>Detection Tier:</strong> {{ result.detection_tier if result.detection_tier else 'N/A' }} ({{ result.detection_confidence if result.detection_confidence else 'N/A' }} confidence)</p>
+                    <p><strong>Forecast Confidence:</strong> {{ result.forecast_confidence if result.forecast_confidence else 'N/A' }}%</p>
+                    <p><strong>Data Completeness:</strong> {{ result.data_completeness_score if result.data_completeness_score else 'N/A' }}%</p>
+                    {% if result.assumptions %}
                     <div style="margin-top: 15px;">
-                        <p><strong>Detection Tier:</strong> {{ result.detection_tier }} ({{ result.detection_confidence }} confidence)</p>
-                        <p><strong>Forecast Confidence:</strong> {{ result.forecast_confidence }}%</p>
-                        <p><strong>Data Completeness:</strong> {{ result.data_completeness_score }}%</p>
-                        {% if result.assumptions %}
-                        <div style="margin-top: 15px;">
-                            <strong>Assumptions:</strong>
-                            <ul style="margin-top: 5px;">
-                                {% for assumption in result.assumptions %}
-                                <li style="color: #666;">{{ assumption }}</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        {% endif %}
-                        {% if result.warnings %}
-                        <div style="margin-top: 15px;">
-                            <strong>Warnings:</strong>
-                            <ul style="margin-top: 5px;">
-                                {% for warning in result.warnings %}
-                                <li style="color: #856404;">{{ warning }}</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        {% endif %}
-                        <div style="margin-top: 15px;">
-                            <strong>JSON Data:</strong>
-                            <pre style="background: white; padding: 15px; border-radius: 4px; overflow-x: auto; max-height: 400px; font-size: 0.85em;">{{ result.to_dict()|tojson }}</pre>
-                        </div>
+                        <strong>Assumptions:</strong>
+                        <ul style="margin-top: 5px;">
+                            {% for assumption in result.assumptions %}
+                            <li style="color: #666;">{{ assumption }}</li>
+                            {% endfor %}
+                        </ul>
                     </div>
-                </details>
-
-                <!-- Re-run Button -->
-                <div style="margin-top: 30px; text-align: center;">
-                    <a href="/payroll-risk?run=true" class="btn btn-primary">Refresh Analysis</a>
+                    {% endif %}
+                    {% if result.warnings %}
+                    <div style="margin-top: 15px;">
+                        <strong>Warnings:</strong>
+                        <ul style="margin-top: 5px;">
+                            {% for warning in result.warnings %}
+                            <li style="color: #856404;">{{ warning }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
                 </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
+            </details>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}
 
-    <script src="/static/js/main.js"></script>
-</body>
-</html>
-
+{% block extra_js %}
+<script>
+    // Modal functions
+    function openNewAnalysisModal() {
+        document.getElementById('newAnalysisModal').style.display = 'block';
+    }
+    
+    function closeNewAnalysisModal() {
+        document.getElementById('newAnalysisModal').style.display = 'none';
+    }
+    
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        const modal = document.getElementById('newAnalysisModal');
+        if (event.target == modal) {
+            closeNewAnalysisModal();
+        }
+    }
+    
+    // Update tenant selector based on connection
+    function updateTenantSelector() {
+        const connectionSelect = document.getElementById('connection_id');
+        const tenantGroup = document.getElementById('tenantGroup');
+        const tenantSelect = document.getElementById('tenant_id');
+        
+        const selectedOption = connectionSelect.options[connectionSelect.selectedIndex];
+        const connectionId = connectionSelect.value;
+        
+        if (!connectionId) {
+            tenantGroup.style.display = 'none';
+            return;
+        }
+        
+        // Fetch tenants for this connection
+        fetch(`/api/connections/${connectionId}/tenants`)
+            .then(response => response.json())
+            .then(data => {
+                tenantSelect.innerHTML = '<option value="">Select a tenant...</option>';
+                
+                if (data.tenants && data.tenants.length > 0) {
+                    tenantGroup.style.display = 'block';
+                    data.tenants.forEach(tenant => {
+                        const option = document.createElement('option');
+                        option.value = tenant.tenant_id;
+                        option.textContent = tenant.tenant_name;
+                        tenantSelect.appendChild(option);
+                    });
+                } else {
+                    tenantGroup.style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching tenants:', error);
+                tenantGroup.style.display = 'none';
+            });
+    }
+</script>
+{% endblock %}

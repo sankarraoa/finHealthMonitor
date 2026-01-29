@@ -18,6 +18,7 @@ from app.mcp_client import XeroMCPClient
 from app.agents.payroll_risk_agent import PayrollRiskAgent
 from app.connections import connection_manager
 from app.quickbooks_client import QuickBooksClient
+from app.payroll_risk_db import payroll_risk_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -51,17 +52,237 @@ templates.env.filters["tojson"] = tojson_filter
 # Initialize Xero client
 xero_client = XeroClient()
 
+
+def get_connections_for_selector() -> Dict[str, Any]:
+    """
+    Get all active connections grouped by category for the connection selector widget.
+    Groups Xero connections by refresh_token (one per OAuth authorization).
+    Returns connections and categories info.
+    """
+    all_connections = connection_manager.get_all_connections()
+    
+    # Filter active connections (with access_token)
+    active_connections = []
+    for conn in all_connections:
+        if conn.get("access_token"):
+            # Ensure tenants array is set for Xero
+            if conn.get("software") == "xero":
+                tenants = connection_manager.get_all_tenants_for_connection(conn["id"])
+                conn["tenants"] = tenants if tenants else []
+            active_connections.append(conn)
+    
+    # Group Xero connections by refresh_token (one per OAuth authorization)
+    grouped_connections = []
+    xero_refresh_tokens_seen = set()
+    
+    for conn in active_connections:
+        if conn.get("software") == "xero":
+            refresh_token = conn.get("refresh_token")
+            if refresh_token and refresh_token in xero_refresh_tokens_seen:
+                continue  # Skip duplicate OAuth authorization
+            if refresh_token:
+                xero_refresh_tokens_seen.add(refresh_token)
+        grouped_connections.append(conn)
+    
+    # Sort by created_at
+    grouped_connections.sort(key=lambda x: x.get("created_at", ""))
+    
+    # Get category info
+    categories = {}
+    for category_key, category_info in connection_manager.SOFTWARE_CATEGORIES.items():
+        categories[category_key] = {
+            "name": category_info["name"],
+            "software": category_info["software"]
+        }
+    
+    return {
+        "connections": grouped_connections,
+        "categories": categories
+    }
+
+
+async def get_selected_connection_and_tenant(
+    request: Request,
+    software_filter: Optional[str] = None,
+    require_tenant: bool = False
+) -> Dict[str, Any]:
+    """
+    Helper function to get selected connection and tenant for a page.
+    
+    Args:
+        request: FastAPI request object
+        software_filter: Optional filter by software type (e.g., "xero")
+        require_tenant: If True, requires tenant selection (for connections like Xero)
+    
+    Returns:
+        Dict with:
+            - selected_connection: The selected connection object
+            - selected_tenant: The selected tenant object (None if not applicable)
+            - access_token: Access token for API calls
+            - tenant_id: Tenant ID (None if not applicable)
+            - tenant_name: Tenant name (None if not applicable)
+            - error: Error message if any
+            - selector_data: Connection selector data for template
+    """
+    connection_id = request.query_params.get("connection_id")
+    tenant_id = request.query_params.get("tenant_id")
+    
+    # Get all active connections
+    if software_filter:
+        all_active_connections = connection_manager.get_active_connections(software=software_filter)
+    else:
+        all_active_connections = connection_manager.get_active_connections()
+    
+    selector_data = get_connections_for_selector()
+    
+    if not all_active_connections:
+        return {
+            "selected_connection": None,
+            "selected_tenant": None,
+            "access_token": None,
+            "tenant_id": None,
+            "tenant_name": None,
+            "error": "No active connections found. Please connect an account in Settings.",
+            "selector_data": selector_data
+        }
+    
+    # Group Xero connections by refresh_token (one connection per OAuth authorization)
+    active_connections = []
+    xero_refresh_tokens_seen = set()
+    
+    for conn in all_active_connections:
+        if conn.get("software") == "xero":
+            refresh_token = conn.get("refresh_token")
+            if refresh_token and refresh_token in xero_refresh_tokens_seen:
+                continue
+            if refresh_token:
+                xero_refresh_tokens_seen.add(refresh_token)
+        active_connections.append(conn)
+    
+    # Sort by created_at to get oldest first (default)
+    active_connections.sort(key=lambda x: x.get("created_at", ""))
+    
+    # Get selected connection
+    selected_connection = None
+    if connection_id:
+        selected_connection = next(
+            (c for c in active_connections if c["id"] == connection_id),
+            None
+        )
+    
+    # Default to first connection if no selection or invalid selection
+    if not selected_connection:
+        selected_connection = active_connections[0]
+    
+    # Refresh token if expired
+    if connection_manager.is_token_expired(selected_connection["id"]):
+        refresh_token = selected_connection.get("refresh_token")
+        if refresh_token:
+            try:
+                # Run token refresh in thread pool to avoid blocking async event loop
+                import asyncio
+                token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
+                connection_manager.sync_tokens_for_refresh_token(
+                    refresh_token=refresh_token,
+                    new_access_token=token_response.get("access_token"),
+                    new_refresh_token=token_response.get("refresh_token", refresh_token),
+                    expires_in=token_response.get("expires_in", 1800),
+                    software="xero"
+                )
+                selected_connection = connection_manager.get_connection(selected_connection["id"])
+                logger.info(f"Successfully refreshed token for connection {selected_connection['id']}")
+            except Exception as refresh_error:
+                logger.error(f"Failed to refresh token: {str(refresh_error)}", exc_info=True)
+                return {
+                    "selected_connection": selected_connection,
+                    "selected_tenant": None,
+                    "access_token": None,
+                    "tenant_id": None,
+                    "tenant_name": None,
+                    "error": f"Connection '{selected_connection.get('name')}' has expired and could not be refreshed. Please refresh manually in Settings.",
+                    "selector_data": selector_data
+                }
+        else:
+            return {
+                "selected_connection": selected_connection,
+                "selected_tenant": None,
+                "access_token": None,
+                "tenant_id": None,
+                "tenant_name": None,
+                "error": f"Connection '{selected_connection.get('name')}' has expired and cannot be refreshed. Please reconnect in Settings.",
+                "selector_data": selector_data
+            }
+    
+    access_token = selected_connection.get("access_token")
+    
+    # Handle tenant selection for connections that support tenants (like Xero)
+    selected_tenant = None
+    tenant_id_result = None
+    tenant_name_result = None
+    
+    # Check if this connection type supports tenants
+    supports_tenants = selected_connection.get("software") == "xero"  # Add other software types as needed
+    
+    if supports_tenants or require_tenant:
+        tenants = connection_manager.get_all_tenants_for_connection(selected_connection["id"])
+        
+        if not tenants:
+            return {
+                "selected_connection": selected_connection,
+                "selected_tenant": None,
+                "access_token": access_token,
+                "tenant_id": None,
+                "tenant_name": None,
+                "error": f"Connection '{selected_connection.get('name')}' has no tenants. Please reconnect in Settings.",
+                "selector_data": selector_data
+            }
+        
+        # Get selected tenant
+        if tenant_id:
+            selected_tenant = next(
+                (t for t in tenants if t.get("tenant_id") == tenant_id),
+                None
+            )
+        
+        # Default to first tenant if no selection or invalid selection
+        if not selected_tenant:
+            selected_tenant = tenants[0]
+        
+        tenant_id_result = selected_tenant.get("tenant_id")
+        tenant_name_result = selected_tenant.get("tenant_name", "Unknown")
+    
+    return {
+        "selected_connection": selected_connection,
+        "selected_tenant": selected_tenant,
+        "access_token": access_token,
+        "tenant_id": tenant_id_result,
+        "tenant_name": tenant_name_result,
+        "error": None,
+        "selector_data": selector_data
+    }
+
 # Progress tracking for async operations
 # Store progress by session ID: {session_id: {"status": "loading|complete|error", "progress": 0-100, "message": "...", "data": {...}}}
 _invoice_progress: Dict[str, Dict[str, Any]] = {}
+_account_progress: Dict[str, Dict[str, Any]] = {}
+_journal_progress: Dict[str, Dict[str, Any]] = {}
+_transaction_progress: Dict[str, Dict[str, Any]] = {}
 _payroll_risk_progress: Dict[str, Dict[str, Any]] = {}
 
-async def _run_payroll_risk_async(session_id: str, access_token: str, llm_model: Optional[str] = None):
-    """Background task to run payroll risk analysis with progress tracking."""
-    progress_key = f"payroll_risk_progress_{session_id}"
+async def _run_payroll_risk_async(
+    analysis_id: str,
+    connection_id: str,
+    connection_name: str,
+    tenant_id: Optional[str],
+    tenant_name: Optional[str],
+    access_token: str,
+    llm_model: Optional[str] = None
+):
+    """Background task to run payroll risk analysis with progress tracking and database storage."""
+    progress_key = f"payroll_risk_progress_{analysis_id}"
     
     try:
-        # Initialize progress
+        # Initialize progress in memory (for real-time updates)
         _payroll_risk_progress[progress_key] = {
             "status": "loading",
             "progress": 0,
@@ -71,10 +292,13 @@ async def _run_payroll_risk_async(session_id: str, access_token: str, llm_model:
         }
         
         def update_progress(progress: int, message: str):
-            """Update progress callback."""
+            """Update progress callback - updates both memory and database."""
             if progress_key in _payroll_risk_progress:
                 _payroll_risk_progress[progress_key]["progress"] = progress
                 _payroll_risk_progress[progress_key]["message"] = message
+            
+            # Also update database
+            payroll_risk_db.update_progress(analysis_id, progress, message)
         
         # Create agent with progress callback
         agent = PayrollRiskAgent(
@@ -86,17 +310,33 @@ async def _run_payroll_risk_async(session_id: str, access_token: str, llm_model:
         # Run analysis
         result = await agent.run()
         
-        # Mark as complete
+        # Convert result to dict for storage
+        if hasattr(result, 'to_dict'):
+            result_dict = result.to_dict()
+        else:
+            result_dict = result if isinstance(result, dict) else {"raw_result": str(result)}
+        
+        # Store in database
+        payroll_risk_db.complete_analysis(analysis_id, result_dict)
+        
+        # Mark as complete in memory
         _payroll_risk_progress[progress_key] = {
             "status": "complete",
             "progress": 100,
             "message": "✅ Analysis complete!",
-            "data": result,
+            "data": result_dict,
             "error": None
         }
         
+        logger.info(f"Payroll risk analysis {analysis_id} completed successfully")
+        
     except Exception as e:
-        logger.error(f"Error in payroll risk analysis: {str(e)}", exc_info=True)
+        logger.error(f"Error in payroll risk analysis {analysis_id}: {str(e)}", exc_info=True)
+        
+        # Store error in database
+        payroll_risk_db.fail_analysis(analysis_id, str(e))
+        
+        # Mark as error in memory
         _payroll_risk_progress[progress_key] = {
             "status": "error",
             "progress": 0,
@@ -184,8 +424,8 @@ def clear_xero_session(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Root endpoint - redirects to settings (no authentication required)."""
-    return RedirectResponse(url="/settings")
+    """Root endpoint - redirects to home page."""
+    return RedirectResponse(url="/home")
 
 
 @app.get("/debug/xero-config")
@@ -217,117 +457,65 @@ async def login(request: Request):
 
 @app.get("/callback")
 async def callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
-    """Handle OAuth callback from Xero."""
-    # Check for errors
-    if error:
-        logger.error(f"OAuth error: {error}")
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": f"Authentication failed: {error}"}
-        )
+    """Handle OAuth callback (legacy route - redirects to new route for multi-tenant support)."""
+    logger.info(f"=== OAUTH CALLBACK RECEIVED (LEGACY ROUTE - REDIRECTING) ===")
+    logger.info(f"Request method: {request.method}")
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Code parameter: {'present' if code else 'missing'}")
+    logger.info(f"State parameter: {state}")
+    logger.info(f"Error parameter: {error}")
+    logger.info(f"Session keys: {list(request.session.keys())}")
     
-    # Verify state
-    stored_state = request.session.get("oauth_state")
-    if not stored_state or stored_state != state:
-        logger.error("State mismatch in OAuth callback")
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Invalid state parameter. Please try again."}
-        )
+    # Determine software type from session or default to xero
+    software = request.session.get("pending_software", "xero")
+    logger.info(f"Redirecting to /callback/{software}")
     
-    if not code:
-        logger.error("No authorization code received")
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "No authorization code received"}
-        )
+    # Redirect to new callback route with all query parameters
+    query_params = dict(request.query_params)
+    if query_params:
+        from urllib.parse import urlencode
+        query_string = urlencode(query_params)
+        redirect_url = f"/callback/{software}?{query_string}"
+    else:
+        redirect_url = f"/callback/{software}"
     
-    try:
-        # Exchange code for tokens
-        token_response = xero_client.get_access_token(code)
-        
-        access_token = token_response.get("access_token")
-        refresh_token = token_response.get("refresh_token")
-        expires_in = token_response.get("expires_in", 1800)
-        
-        if not access_token:
-            raise ValueError("No access token in response")
-        
-        # Get connected organizations (tenants)
-        connections = xero_client.get_connections(access_token)
-        
-        if not connections:
-            raise ValueError("No Xero organizations connected")
-        
-        # Store tokens and tenant info in session
-        # For simplicity, use the first connected organization
-        tenant = connections[0]
-        request.session["access_token"] = access_token
-        request.session["refresh_token"] = refresh_token
-        request.session["tenant_id"] = tenant.get("tenantId")
-        request.session["tenant_name"] = tenant.get("tenantName")
-        request.session["expires_in"] = expires_in
-        request.session["token_created_at"] = datetime.now().isoformat()
-        
-        # Clear OAuth state
-        request.session.pop("oauth_state", None)
-        
-        logger.info(f"Successfully authenticated with Xero organization: {tenant.get('tenantName')}")
-        
-        # Check if this was a reconnect (coming from settings)
-        if request.session.get("reconnecting"):
-            request.session.pop("reconnecting", None)
-            return RedirectResponse(url="/settings?reconnected=true")
-        
-        return RedirectResponse(url="/home")
-    
-    except Exception as e:
-        logger.error(f"Error during token exchange: {str(e)}")
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": f"Authentication failed: {str(e)}"}
-        )
+    logger.info(f"Redirecting to: {redirect_url}")
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @app.get("/accounts", response_class=HTMLResponse)
 async def accounts(request: Request, connection_id: Optional[str] = None):
     """Display chart of accounts with connection selection."""
-    # Get connection_id from query parameter
-    connection_id = request.query_params.get("connection_id")
-    """Display chart of accounts."""
     try:
-        # Get active Xero connections
-        active_xero_connections = connection_manager.get_active_connections(software="xero")
+        # Get selected connection and tenant using helper function
+        selection = await get_selected_connection_and_tenant(
+            request,
+            software_filter="xero",
+            require_tenant=True
+        )
         
-        if not active_xero_connections:
+        if selection["error"]:
             return templates.TemplateResponse(
                 "index.html",
                 {
                     "request": request,
-                    "error": "No active Xero connections found. Please connect a Xero account in Settings.",
-                    "connections": [],
-                    "selected_connection": None,
+                    "error": selection["error"],
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selection["selected_connection"]["id"]] if selection["selected_connection"] else [],
+                    "allow_multiple": False,
+                    "selected_connection": selection["selected_connection"],
+                    "selected_tenant": selection["selected_tenant"],
                     "accounts": [],
-                    "tenant_name": None,
                     "account_count": 0
                 }
             )
         
-        # Sort by created_at to get oldest first (default)
-        active_xero_connections.sort(key=lambda x: x.get("created_at", ""))
-        
-        # Get selected connection
-        selected_connection = None
-        if connection_id:
-            # Find the requested connection
-            selected_connection = next(
-                (c for c in active_xero_connections if c["id"] == connection_id),
-                None
-            )
-        
-        # Default to oldest connection if no selection or invalid selection
-        if not selected_connection:
-            selected_connection = active_xero_connections[0]
+        selected_connection = selection["selected_connection"]
+        selected_tenant = selection["selected_tenant"]
+        access_token = selection["access_token"]
+        tenant_id = selection["tenant_id"]
+        tenant_name = selection["tenant_name"]
         
         # Check if connection is Xero
         if selected_connection.get("software") != "xero":
@@ -336,67 +524,130 @@ async def accounts(request: Request, connection_id: Optional[str] = None):
                 {
                     "request": request,
                     "error": f"Chart of Accounts is only available for Xero connections. Selected connection '{selected_connection.get('name')}' is a {selected_connection.get('software', 'unknown')} connection.",
-                    "connections": active_xero_connections,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
                     "selected_connection": selected_connection,
+                    "selected_tenant": selected_tenant,
                     "accounts": [],
-                    "tenant_name": selected_connection.get("tenant_name"),
                     "account_count": 0
                 }
             )
         
-        # Check if token is expired
-        if connection_manager.is_token_expired(selected_connection["id"]):
+        # Check if async mode is requested
+        async_param = request.query_params.get("async", "true")
+        use_async = async_param.lower() == "true"
+        
+        if use_async:
+            # Generate a unique session ID for progress tracking
+            session_id = request.session.get("session_id")
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                request.session["session_id"] = session_id
+            
+            progress_key = f"account_progress_{session_id}"
+            
+            # Check if there's already a result
+            if progress_key in _account_progress:
+                progress_data = _account_progress[progress_key]
+                if progress_data["status"] == "complete" and progress_data["data"]:
+                    result_data = progress_data["data"]
+                    del _account_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "index.html",
+                        {
+                            "request": request,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant,
+                            "accounts": result_data["accounts"],
+                            "account_count": result_data["account_count"],
+                            "async_mode": False
+                        }
+                    )
+                elif progress_data["status"] == "error":
+                    error_msg = progress_data.get("error", "Unknown error")
+                    del _account_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "index.html",
+                        {
+                            "request": request,
+                            "error": f"Failed to fetch accounts: {error_msg}",
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant,
+                            "accounts": [],
+                            "account_count": 0,
+                            "async_mode": False
+                        }
+                    )
+            
+            # Start background task if not already running
+            if progress_key not in _account_progress or _account_progress[progress_key]["status"] != "loading":
+                asyncio.create_task(_fetch_accounts_async(session_id, access_token, tenant_id))
+            
+            # Return loading page
             return templates.TemplateResponse(
                 "index.html",
                 {
                     "request": request,
-                    "error": f"Connection '{selected_connection.get('name')}' has expired. Please refresh the connection in Settings.",
-                    "connections": active_xero_connections,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
                     "selected_connection": selected_connection,
-                    "accounts": [],
-                    "tenant_name": selected_connection.get("tenant_name"),
-                    "account_count": 0
+                    "selected_tenant": selected_tenant,
+                    "accounts": None,
+                    "account_count": 0,
+                    "async_mode": True,
+                    "session_id": session_id
                 }
             )
         
-        access_token = selected_connection.get("access_token")
-        tenant_id = selected_connection.get("tenant_id")
-        tenant_name = selected_connection.get("tenant_name", "Unknown")
-        
-        # Fetch accounts from Xero
+        # Synchronous mode
         accounts_data = xero_client.get_accounts(access_token, tenant_id)
         accounts_list = accounts_data.get("Accounts", [])
-        
-        # Sort accounts by code
         accounts_list.sort(key=lambda x: x.get("Code", ""))
         
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
-                "connections": active_xero_connections,
+                "connections": selection["selector_data"]["connections"],
+                "categories": selection["selector_data"]["categories"],
+                "selected_connection_ids": [selected_connection["id"]],
+                "allow_multiple": False,
                 "selected_connection": selected_connection,
+                "selected_tenant": selected_tenant,
                 "accounts": accounts_list,
-                "tenant_name": tenant_name,
-                "account_count": len(accounts_list)
+                "account_count": len(accounts_list),
+                "async_mode": False
             }
         )
     
     except Exception as e:
         logger.error(f"Error fetching accounts: {str(e)}")
-        # Get connections for error display
-        active_xero_connections = connection_manager.get_active_connections(software="xero")
-        active_xero_connections.sort(key=lambda x: x.get("created_at", ""))
-        
+        selector_data = get_connections_for_selector()
+        selected_connection_id = selection["selected_connection"]["id"] if 'selection' in locals() and selection["selected_connection"] else None
         return templates.TemplateResponse(
             "index.html",
             {
                 "request": request,
                 "error": f"Error fetching accounts: {str(e)}",
-                "connections": active_xero_connections,
-                "selected_connection": active_xero_connections[0] if active_xero_connections else None,
+                "connections": selector_data["connections"],
+                "categories": selector_data["categories"],
+                "selected_connection_ids": [selected_connection_id] if selected_connection_id else [],
+                "allow_multiple": False,
+                "selected_connection": selection["selected_connection"] if 'selection' in locals() and selection["selected_connection"] else None,
+                "selected_tenant": selection["selected_tenant"] if 'selection' in locals() and selection["selected_tenant"] else None,
                 "accounts": [],
-                "tenant_name": None,
                 "account_count": 0
             }
         )
@@ -486,160 +737,224 @@ async def invoices(request: Request, async_mode: bool = False):
     """Display outstanding invoices using MCP server."""
     logger.info(f"Invoices endpoint called (async_mode={async_mode})")
     
-    # Check authentication and token expiration
-    if not is_authenticated(request):
-        logger.warning("Unauthenticated request to /invoices, redirecting to settings")
-        return RedirectResponse(url="/settings?expired=true")
-    
-    # Check and refresh token if needed
-    if not check_and_refresh_token(request):
-        logger.warning("Token expired or invalid, redirecting to settings")
-        return RedirectResponse(url="/settings?expired=true")
-    
-    # Get session tokens after authentication check
-        access_token = request.session.get("access_token")
-        tenant_id = request.session.get("tenant_id")
-        tenant_name = request.session.get("tenant_name", "Unknown")
+    try:
+        # Get selected connection and tenant using helper function
+        selection = await get_selected_connection_and_tenant(
+            request,
+            software_filter="xero",
+            require_tenant=True
+        )
         
-    # Check if async mode is requested or if we should use it by default
-    # Default to async mode unless explicitly disabled
-    async_param = request.query_params.get("async", "true")
-    use_async = async_mode if async_mode else (async_param.lower() == "true")
-    
-    if use_async:
-        # Generate a unique session ID for progress tracking
-        session_id = request.session.get("session_id")
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            request.session["session_id"] = session_id
+        if selection["error"]:
+            return templates.TemplateResponse(
+                "invoices.html",
+                {
+                    "request": request,
+                    "error": selection["error"],
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selection["selected_connection"]["id"]] if selection["selected_connection"] else [],
+                    "allow_multiple": False,
+                    "selected_connection": selection["selected_connection"],
+                    "selected_tenant": selection["selected_tenant"],
+                    "invoices": [],
+                    "invoice_count": 0,
+                    "total_outstanding": 0
+                }
+            )
         
-        progress_key = f"invoice_progress_{session_id}"
+        selected_connection = selection["selected_connection"]
+        selected_tenant = selection["selected_tenant"]
+        access_token = selection["access_token"]
+        tenant_id = selection["tenant_id"]
+        tenant_name = selection["tenant_name"]
         
-        # Check if there's already a result
-        if progress_key in _invoice_progress:
-            progress_data = _invoice_progress[progress_key]
-            if progress_data["status"] == "complete" and progress_data["data"]:
-                # Clear the progress and return the result
-                result_data = progress_data["data"]
-                del _invoice_progress[progress_key]
+        # Check if async mode is requested or if we should use it by default
+        # Default to async mode unless explicitly disabled
+        async_param = request.query_params.get("async", "true")
+        use_async = async_mode if async_mode else (async_param.lower() == "true")
+        
+        if use_async:
+            # Generate a unique session ID for progress tracking
+            session_id = request.session.get("session_id")
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                request.session["session_id"] = session_id
+            
+            progress_key = f"invoice_progress_{session_id}"
+            
+            # Check if there's already a result
+            if progress_key in _invoice_progress:
+                progress_data = _invoice_progress[progress_key]
+                if progress_data["status"] == "complete" and progress_data["data"]:
+                    # Clear the progress and return the result
+                    result_data = progress_data["data"]
+                    del _invoice_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "invoices.html",
+                        {
+                            "request": request,
+                            "invoices": result_data["invoices"],
+                            "invoice_count": result_data["invoice_count"],
+                            "total_outstanding": result_data["total_outstanding"],
+                            "async_mode": True,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant
+                        }
+                    )
+                elif progress_data["status"] == "error":
+                    error_msg = progress_data.get("error", "Unknown error")
+                    del _invoice_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "invoices.html",
+                        {
+                            "request": request,
+                            "error": f"Failed to fetch invoices: {error_msg}",
+                            "invoices": [],
+                            "invoice_count": 0,
+                            "total_outstanding": 0,
+                            "async_mode": True,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant
+                        }
+                    )
+            
+            # Start background task if not already running
+            if progress_key not in _invoice_progress or _invoice_progress[progress_key]["status"] != "loading":
+                # Start background task
+                asyncio.create_task(_fetch_invoices_async(session_id, access_token))
+            
+            # Return loading page
+            return templates.TemplateResponse(
+                "invoices.html",
+                {
+                    "request": request,
+                    "invoices": None,
+                    "invoice_count": 0,
+                    "total_outstanding": 0,
+                    "async_mode": True,
+                    "session_id": session_id,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
+                    "selected_connection": selected_connection,
+                    "selected_tenant": selected_tenant
+                }
+            )
+        else:
+            # Synchronous mode (original behavior)
+            logger.info(f"Fetching invoices for tenant: {tenant_name} (ID: {tenant_id})")
+            
+            mcp_client = None
+            try:
+                # Create MCP client with bearer token
+                logger.info("Initializing MCP client...")
+                mcp_client = XeroMCPClient(bearer_token=access_token)
+                logger.info(f"MCP client created, server path: {mcp_client.mcp_server_path}")
+                
+                # Fetch outstanding invoices via MCP with timeout
+                logger.info("Fetching outstanding invoices from MCP server...")
+                try:
+                    invoices_list = await asyncio.wait_for(
+                        mcp_client.get_outstanding_invoices(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                    logger.info(f"Successfully fetched {len(invoices_list)} invoices from MCP server")
+                except asyncio.TimeoutError:
+                    logger.error("MCP server request timed out after 30 seconds")
+                    raise Exception("Request timed out. The MCP server may not be responding. Please check the server logs.")
+                except Exception as mcp_error:
+                    logger.error(f"MCP server error: {str(mcp_error)}", exc_info=True)
+                    raise
+                
+                # Close MCP client
+                logger.info("Closing MCP client connection...")
+                await mcp_client.close()
+                mcp_client = None
+                
+                # Calculate totals
+                logger.info("Calculating invoice totals...")
+                total_outstanding = sum(
+                    float(inv.get("AmountDue", 0) or 0) 
+                    for inv in invoices_list
+                )
+                logger.info(f"Total outstanding amount: ${total_outstanding:.2f}")
+                
+                logger.info(f"Rendering invoices page with {len(invoices_list)} invoices")
                 return templates.TemplateResponse(
                     "invoices.html",
                     {
                         "request": request,
-                        "invoices": result_data["invoices"],
-                        "tenant_name": tenant_name,
-                        "invoice_count": result_data["invoice_count"],
-                        "total_outstanding": result_data["total_outstanding"],
-                        "async_mode": True
+                        "invoices": invoices_list,
+                        "invoice_count": len(invoices_list),
+                        "total_outstanding": total_outstanding,
+                        "async_mode": False,
+                        "connections": selection["selector_data"]["connections"],
+                        "categories": selection["selector_data"]["categories"],
+                        "selected_connection_ids": [selected_connection["id"]],
+                        "allow_multiple": False,
+                        "selected_connection": selected_connection,
+                        "selected_tenant": selected_tenant
                     }
                 )
-            elif progress_data["status"] == "error":
-                error_msg = progress_data.get("error", "Unknown error")
-                del _invoice_progress[progress_key]
+            
+            except Exception as mcp_e:
+                logger.error(f"Error fetching invoices via MCP: {str(mcp_e)}", exc_info=True)
+                
+                # Ensure MCP client is closed even on error
+                if mcp_client:
+                    try:
+                        logger.info("Attempting to close MCP client after error...")
+                        await mcp_client.close()
+                    except Exception as close_error:
+                        logger.error(f"Error closing MCP client: {str(close_error)}")
+                
                 return templates.TemplateResponse(
                     "invoices.html",
                     {
                         "request": request,
-                        "error": f"Failed to fetch invoices: {error_msg}",
+                        "error": f"Failed to fetch invoices: {str(mcp_e)}",
                         "invoices": [],
-                        "tenant_name": tenant_name,
                         "invoice_count": 0,
                         "total_outstanding": 0,
-                        "async_mode": True
+                        "async_mode": False,
+                        "connections": selection["selector_data"]["connections"],
+                        "categories": selection["selector_data"]["categories"],
+                        "selected_connection_ids": [selected_connection["id"]],
+                        "allow_multiple": False,
+                        "selected_connection": selected_connection,
+                        "selected_tenant": selected_tenant
                     }
                 )
-        
-        # Start background task if not already running
-        if progress_key not in _invoice_progress or _invoice_progress[progress_key]["status"] != "loading":
-            # Start background task
-            asyncio.create_task(_fetch_invoices_async(session_id, access_token))
-        
-        # Return loading page
-        return templates.TemplateResponse(
-            "invoices.html",
-            {
-                "request": request,
-                "invoices": None,
-                "tenant_name": tenant_name,
-                "invoice_count": 0,
-                "total_outstanding": 0,
-                "async_mode": True,
-                "session_id": session_id
-            }
-        )
-    
-    # Synchronous mode (original behavior)
-    logger.info(f"Fetching invoices for tenant: {tenant_name} (ID: {tenant_id})")
-    
-    mcp_client = None
-    try:
-        # Create MCP client with bearer token
-        logger.info("Initializing MCP client...")
-        mcp_client = XeroMCPClient(bearer_token=access_token)
-        logger.info(f"MCP client created, server path: {mcp_client.mcp_server_path}")
-        
-        # Fetch outstanding invoices via MCP with timeout
-        logger.info("Fetching outstanding invoices from MCP server...")
-        try:
-            invoices_list = await asyncio.wait_for(
-                mcp_client.get_outstanding_invoices(),
-                timeout=30.0  # 30 second timeout
-            )
-            logger.info(f"Successfully fetched {len(invoices_list)} invoices from MCP server")
-        except asyncio.TimeoutError:
-            logger.error("MCP server request timed out after 30 seconds")
-            raise Exception("Request timed out. The MCP server may not be responding. Please check the server logs.")
-        except Exception as mcp_error:
-            logger.error(f"MCP server error: {str(mcp_error)}", exc_info=True)
-            raise
-        
-        # Close MCP client
-        logger.info("Closing MCP client connection...")
-        await mcp_client.close()
-        mcp_client = None
-        
-        # Calculate totals
-        logger.info("Calculating invoice totals...")
-        total_outstanding = sum(
-            float(inv.get("AmountDue", 0) or 0) 
-            for inv in invoices_list
-        )
-        logger.info(f"Total outstanding amount: ${total_outstanding:.2f}")
-        
-        logger.info(f"Rendering invoices page with {len(invoices_list)} invoices")
-        return templates.TemplateResponse(
-            "invoices.html",
-            {
-                "request": request,
-                "invoices": invoices_list,
-                "tenant_name": tenant_name,
-                "invoice_count": len(invoices_list),
-                "total_outstanding": total_outstanding,
-                "async_mode": False
-            }
-        )
     
     except Exception as e:
-        logger.error(f"Error fetching invoices via MCP: {str(e)}", exc_info=True)
-        
-        # Ensure MCP client is closed even on error
-        if mcp_client:
-            try:
-                logger.info("Attempting to close MCP client after error...")
-                await mcp_client.close()
-            except Exception as close_error:
-                logger.error(f"Error closing MCP client: {str(close_error)}")
-        
+        logger.error(f"Error in invoices route: {str(e)}", exc_info=True)
+        selector_data = get_connections_for_selector()
+        selected_connection_id = selection["selected_connection"]["id"] if 'selection' in locals() and selection["selected_connection"] else None
         return templates.TemplateResponse(
             "invoices.html",
             {
                 "request": request,
-                "error": f"Failed to fetch invoices: {str(e)}",
+                "error": f"Failed to load invoices: {str(e)}",
                 "invoices": [],
-                "tenant_name": request.session.get("tenant_name", "Unknown"),
                 "invoice_count": 0,
                 "total_outstanding": 0,
-                "async_mode": False
+                "async_mode": False,
+                "connections": selector_data["connections"],
+                "categories": selector_data["categories"],
+                "selected_connection_ids": [selected_connection_id] if selected_connection_id else [],
+                "allow_multiple": False,
+                "selected_connection": selection["selected_connection"] if 'selection' in locals() and selection["selected_connection"] else None,
+                "selected_tenant": selection["selected_tenant"] if 'selection' in locals() and selection["selected_tenant"] else None
             }
         )
 
@@ -669,24 +984,278 @@ async def invoices_progress(request: Request):
     })
 
 
+async def _fetch_accounts_async(session_id: str, access_token: str, tenant_id: str):
+    """Background task to fetch accounts with progress tracking."""
+    progress_key = f"account_progress_{session_id}"
+    
+    try:
+        _account_progress[progress_key] = {
+            "status": "loading",
+            "progress": 0,
+            "message": "Initializing...",
+            "data": None,
+            "error": None
+        }
+        
+        def update_progress(progress: int, message: str):
+            if progress_key in _account_progress:
+                _account_progress[progress_key]["progress"] = progress
+                _account_progress[progress_key]["message"] = message
+        
+        update_progress(10, "Connecting to Xero...")
+        xero_client_instance = XeroClient()
+        
+        update_progress(30, "Fetching accounts...")
+        accounts_data = xero_client_instance.get_accounts(access_token, tenant_id)
+        accounts_list = accounts_data.get("Accounts", [])
+        accounts_list.sort(key=lambda x: x.get("Code", ""))
+        
+        update_progress(100, "Complete")
+        _account_progress[progress_key] = {
+            "status": "complete",
+            "progress": 100,
+            "message": "Complete",
+            "data": {"accounts": accounts_list, "account_count": len(accounts_list)},
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"Error fetching accounts: {str(e)}", exc_info=True)
+        _account_progress[progress_key] = {
+            "status": "error",
+            "progress": 0,
+            "message": "Error occurred",
+            "data": None,
+            "error": str(e)
+        }
+
+
+async def _fetch_journals_async(session_id: str, access_token: str, tenant_id: str):
+    """Background task to fetch manual journals with progress tracking."""
+    progress_key = f"journal_progress_{session_id}"
+    mcp_client = None
+    
+    try:
+        _journal_progress[progress_key] = {
+            "status": "loading",
+            "progress": 0,
+            "message": "Initializing...",
+            "data": None,
+            "error": None
+        }
+        
+        def update_progress(progress: int, message: str):
+            if progress_key in _journal_progress:
+                _journal_progress[progress_key]["progress"] = progress
+                _journal_progress[progress_key]["message"] = message
+        
+        update_progress(10, "Connecting to Xero...")
+        mcp_client = XeroMCPClient(bearer_token=access_token)
+        
+        update_progress(30, "Fetching manual journals...")
+        result = await mcp_client.call_tool("list-manual-journals", {})
+        
+        parsed_journals = []
+        if isinstance(result, dict) and "content" in result:
+            update_progress(50, "Processing journals...")
+            journals = await _process_manual_journals_content(
+                result["content"], 
+                mcp_client,
+                access_token=access_token,
+                tenant_id=tenant_id
+            )
+            
+            update_progress(80, "Parsing journal data...")
+            for item in journals:
+                if item.get("type") == "text":
+                    parsed_journal = _parse_manual_journal_text(item.get("text", ""))
+                    parsed_journals.append(parsed_journal)
+        
+        await mcp_client.close()
+        mcp_client = None
+        
+        update_progress(100, "Complete")
+        _journal_progress[progress_key] = {
+            "status": "complete",
+            "progress": 100,
+            "message": "Complete",
+            "data": {"journals": parsed_journals},
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"Error fetching journals: {str(e)}", exc_info=True)
+        if mcp_client:
+            try:
+                await mcp_client.close()
+            except:
+                pass
+        _journal_progress[progress_key] = {
+            "status": "error",
+            "progress": 0,
+            "message": "Error occurred",
+            "data": None,
+            "error": str(e)
+        }
+
+
+async def _fetch_transactions_async(session_id: str, access_token: str):
+    """Background task to fetch bank transactions with progress tracking."""
+    progress_key = f"transaction_progress_{session_id}"
+    mcp_client = None
+    
+    try:
+        _transaction_progress[progress_key] = {
+            "status": "loading",
+            "progress": 0,
+            "message": "Initializing...",
+            "data": None,
+            "error": None
+        }
+        
+        def update_progress(progress: int, message: str):
+            if progress_key in _transaction_progress:
+                _transaction_progress[progress_key]["progress"] = progress
+                _transaction_progress[progress_key]["message"] = message
+        
+        update_progress(10, "Connecting to Xero...")
+        mcp_client = XeroMCPClient(bearer_token=access_token)
+        
+        update_progress(30, "Fetching bank transactions...")
+        result = await mcp_client.call_tool("list-bank-transactions", {"page": 1})
+        
+        parsed_transactions = []
+        if isinstance(result, dict) and "content" in result:
+            update_progress(60, "Processing transactions...")
+            transactions = result["content"]
+            
+            update_progress(80, "Parsing transaction data...")
+            for item in transactions:
+                if item.get("type") == "text":
+                    parsed_transaction = _parse_bank_transaction_text(item.get("text", ""))
+                    parsed_transactions.append(parsed_transaction)
+        
+        await mcp_client.close()
+        mcp_client = None
+        
+        update_progress(100, "Complete")
+        _transaction_progress[progress_key] = {
+            "status": "complete",
+            "progress": 100,
+            "message": "Complete",
+            "data": {"transactions": parsed_transactions},
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"Error fetching transactions: {str(e)}", exc_info=True)
+        if mcp_client:
+            try:
+                await mcp_client.close()
+            except:
+                pass
+        _transaction_progress[progress_key] = {
+            "status": "error",
+            "progress": 0,
+            "message": "Error occurred",
+            "data": None,
+            "error": str(e)
+        }
+
+
+@app.get("/accounts/progress")
+async def accounts_progress(request: Request):
+    """Get progress status for accounts fetching."""
+    session_id = request.session.get("session_id")
+    if not session_id:
+        return JSONResponse({"status": "error", "message": "No session ID"})
+    
+    progress_key = f"account_progress_{session_id}"
+    
+    if progress_key not in _account_progress:
+        return JSONResponse({
+            "status": "not_started",
+            "progress": 0,
+            "message": "Not started"
+        })
+    
+    progress_data = _account_progress[progress_key]
+    return JSONResponse({
+        "status": progress_data["status"],
+        "progress": progress_data["progress"],
+        "message": progress_data["message"],
+        "error": progress_data.get("error")
+    })
+
+
+@app.get("/manual-journals/progress")
+async def journals_progress(request: Request):
+    """Get progress status for manual journals fetching."""
+    session_id = request.session.get("session_id")
+    if not session_id:
+        return JSONResponse({"status": "error", "message": "No session ID"})
+    
+    progress_key = f"journal_progress_{session_id}"
+    
+    if progress_key not in _journal_progress:
+        return JSONResponse({
+            "status": "not_started",
+            "progress": 0,
+            "message": "Not started"
+        })
+    
+    progress_data = _journal_progress[progress_key]
+    return JSONResponse({
+        "status": progress_data["status"],
+        "progress": progress_data["progress"],
+        "message": progress_data["message"],
+        "error": progress_data.get("error")
+    })
+
+
+@app.get("/bank-transactions/progress")
+async def transactions_progress(request: Request):
+    """Get progress status for bank transactions fetching."""
+    session_id = request.session.get("session_id")
+    if not session_id:
+        return JSONResponse({"status": "error", "message": "No session ID"})
+    
+    progress_key = f"transaction_progress_{session_id}"
+    
+    if progress_key not in _transaction_progress:
+        return JSONResponse({
+            "status": "not_started",
+            "progress": 0,
+            "message": "Not started"
+        })
+    
+    progress_data = _transaction_progress[progress_key]
+    return JSONResponse({
+        "status": progress_data["status"],
+        "progress": progress_data["progress"],
+        "message": progress_data["message"],
+        "error": progress_data.get("error")
+    })
+
+
 @app.get("/home", response_class=HTMLResponse)
 async def home(request: Request):
     """Display home page."""
-    # Check authentication and token expiration
-    if not is_authenticated(request):
-        return RedirectResponse(url="/settings?expired=true")
+    # Get connections for selector
+    selector_data = get_connections_for_selector()
     
-    # Check and refresh token if needed
-    if not check_and_refresh_token(request):
-        return RedirectResponse(url="/settings?expired=true")
-    
-    tenant_name = request.session.get("tenant_name", "Unknown")
+    # Get selected connection IDs from query params
+    connection_ids_param = request.query_params.get("connection_ids", "")
+    selected_connection_ids = [cid.strip() for cid in connection_ids_param.split(",") if cid.strip()] if connection_ids_param else []
+    connection_id_param = request.query_params.get("connection_id")
+    if connection_id_param and connection_id_param not in selected_connection_ids:
+        selected_connection_ids.append(connection_id_param)
     
     return templates.TemplateResponse(
         "home.html",
         {
             "request": request,
-            "tenant_name": tenant_name
+            "connections": selector_data["connections"],
+            "categories": selector_data["categories"],
+            "selected_connection_ids": selected_connection_ids,
+            "allow_multiple": False
         }
     )
 
@@ -713,7 +1282,8 @@ async def _check_xero_connection_exists(connection: Dict[str, Any]) -> bool:
             refresh_token = connection.get("refresh_token")
             if refresh_token:
                 try:
-                    token_response = xero_client.refresh_token(refresh_token)
+                    import asyncio
+                    token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
                     new_access_token = token_response.get("access_token")
                     new_refresh_token = token_response.get("refresh_token", refresh_token)
                     expires_in = token_response.get("expires_in", 1800)
@@ -799,6 +1369,12 @@ async def _ensure_xero_connection_id(connection: Dict[str, Any]) -> bool:
     return await _check_xero_connection_exists(connection)
 
 
+@app.get("/connections", response_class=HTMLResponse)
+async def connections(request: Request):
+    """Display connections page (renamed from settings)."""
+    return await settings(request)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings(request: Request):
     """Display settings page with multiple connections."""
@@ -812,14 +1388,23 @@ async def settings(request: Request):
         session_tenant_id = request.session.get("tenant_id")
         
         if session_access_token and session_tenant_id:
-            # Check if this connection already exists in connection manager
+            # Check if this tenant already exists in any connection (check tenants array)
             all_existing = connection_manager.get_all_connections()
-            existing_xero = next(
-                (c for c in all_existing if c.get("software") == "xero" and c.get("tenant_id") == session_tenant_id),
-                None
-            )
+            tenant_exists = False
             
-            if not existing_xero:
+            for c in all_existing:
+                if c.get("software") == "xero":
+                    # Check old format (backward compatibility)
+                    if c.get("tenant_id") == session_tenant_id:
+                        tenant_exists = True
+                        break
+                    # Check new format (tenants array)
+                    tenants = connection_manager.get_all_tenants_for_connection(c.get("id"))
+                    if any(t.get("tenant_id") == session_tenant_id for t in tenants):
+                        tenant_exists = True
+                        break
+            
+            if not tenant_exists:
                 # Migrate session connection to connection manager
                 logger.info(f"Migrating session-based Xero connection: {session_tenant_name}")
                 connection_manager.add_connection(
@@ -833,6 +1418,19 @@ async def settings(request: Request):
                     expires_in=request.session.get("expires_in", 1800),
                     metadata={"migrated_from_session": True}
                 )
+            else:
+                # Tenant already exists - clear session to prevent re-migration
+                logger.debug(f"Session tenant {session_tenant_id} already exists in connection manager, skipping migration")
+                # Clear session data to prevent future migrations
+                request.session.pop("access_token", None)
+                request.session.pop("tenant_id", None)
+                request.session.pop("tenant_name", None)
+                request.session.pop("refresh_token", None)
+    
+    # Clean up duplicate connections (merge duplicates sharing same refresh_token)
+    cleanup_count = connection_manager.cleanup_duplicate_connections()
+    if cleanup_count > 0:
+        logger.info(f"Cleaned up {cleanup_count} duplicate connection(s) on settings page load")
     
     # Load all connections
     all_connections = connection_manager.get_all_connections()
@@ -1018,7 +1616,7 @@ async def connect_connection(request: Request, connection_id: str):
             return RedirectResponse(url="/settings?error=Unsupported software type")
         
         logger.info(f"Redirecting to {software} authorization for connection {connection_id}")
-        return RedirectResponse(url=auth_url)
+        return RedirectResponse(url=auth_url, status_code=303)
     except Exception as e:
         logger.error(f"Error generating OAuth URL for {software}: {str(e)}", exc_info=True)
         return RedirectResponse(url=f"/settings?error=Failed to start OAuth flow: {str(e)}")
@@ -1055,7 +1653,8 @@ async def disconnect_connection(request: Request, connection_id: str):
                 refresh_token = connection.get("refresh_token")
                 if refresh_token:
                     try:
-                        token_response = xero_client.refresh_token(refresh_token)
+                        import asyncio
+                        token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
                         access_token = token_response.get("access_token")
                     except:
                         pass  # Use existing token
@@ -1090,7 +1689,8 @@ async def disconnect_connection(request: Request, connection_id: str):
             if refresh_token:
                 try:
                     logger.info(f"Refreshing token before disconnect: {connection_id}")
-                    token_response = xero_client.refresh_token(refresh_token)
+                    import asyncio
+                    token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
                     new_access_token = token_response.get("access_token")
                     if new_access_token:
                         access_token = new_access_token
@@ -1116,8 +1716,22 @@ async def disconnect_connection(request: Request, connection_id: str):
             logger.error(f"Exception disconnecting from Xero API: {str(e)}", exc_info=True)
             return RedirectResponse(url=f"/settings?error=Error disconnecting from Xero: {str(e)}", status_code=303)
     
-    # Delete the connection completely from local storage
-    connection_manager.delete_connection(connection_id)
+    # Delete ALL connections sharing the same refresh_token (to clean up duplicates)
+    refresh_token = connection.get("refresh_token")
+    if software == "xero" and refresh_token:
+        duplicate_connections = connection_manager.get_connections_by_refresh_token(refresh_token, software="xero")
+        deleted_count = 0
+        for dup_conn in duplicate_connections:
+            dup_conn_id = dup_conn.get("id")
+            if dup_conn_id:
+                connection_manager.delete_connection(dup_conn_id)
+                deleted_count += 1
+                logger.info(f"Deleted duplicate connection {dup_conn_id} (shared refresh_token)")
+        logger.info(f"Deleted {deleted_count} connection(s) with refresh_token {refresh_token[:20]}...")
+    else:
+        # For non-Xero or connections without refresh_token, just delete this one
+        connection_manager.delete_connection(connection_id)
+        logger.info(f"Deleted connection {connection_id}")
     
     # Clear session if this connection matches the session data
     # Also clear if this is the only Xero connection (to prevent stale session data)
@@ -1127,7 +1741,7 @@ async def disconnect_connection(request: Request, connection_id: str):
             logger.info(f"Clearing session data for disconnected connection: {connection_id} (matches_session={matches_session}, remaining_xero={len(all_xero_connections)})")
             clear_xero_session(request)
     
-    logger.info(f"Disconnected and deleted connection: {connection_id}")
+    logger.info(f"Disconnected and deleted connection(s)")
     return RedirectResponse(url="/settings?disconnected=true", status_code=303)
 
 
@@ -1146,7 +1760,8 @@ async def refresh_connection(request: Request, connection_id: str):
     
     try:
         if software == "xero":
-            token_response = xero_client.refresh_token(refresh_token)
+            import asyncio
+            token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
         elif software == "quickbooks":
             # QuickBooks integration is under construction
             return RedirectResponse(url="/settings?error=QuickBooks integration is currently under construction. Please check back soon!")
@@ -1296,10 +1911,28 @@ async def add_tenant_to_connection(request: Request, connection_id: str):
         logger.info(f"=== OAUTH URL GENERATED SUCCESSFULLY ===")
         logger.info(f"Full OAuth URL length: {len(auth_url)}")
         logger.info(f"Full OAuth URL: {auth_url}")
+        
+        # Verify the URL is valid and can be parsed
+        try:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(auth_url)
+            params = parse_qs(parsed.query)
+            logger.info(f"=== URL VERIFICATION ===")
+            logger.info(f"Scheme: {parsed.scheme}")
+            logger.info(f"Netloc: {parsed.netloc}")
+            logger.info(f"Path: {parsed.path}")
+            logger.info(f"Client ID in URL: {params.get('client_id', [None])[0]}")
+            logger.info(f"Redirect URI in URL: {params.get('redirect_uri', [None])[0]}")
+            logger.info(f"State in URL: {params.get('state', [None])[0][:20] if params.get('state', [None])[0] else None}...")
+        except Exception as e:
+            logger.warning(f"Could not parse OAuth URL for verification: {str(e)}")
+        
         logger.info(f"Redirecting browser to Xero authorization page")
         logger.info(f"=== ADD TENANT FLOW - REDIRECTING TO XERO ===")
         
-        return RedirectResponse(url=auth_url)
+        # Use 303 See Other instead of 307 to ensure GET method is used
+        # This might help with browser/Xero session issues
+        return RedirectResponse(url=auth_url, status_code=303)
     except ValueError as ve:
         logger.error(f"=== CONFIGURATION ERROR ===")
         logger.error(f"ValueError: {str(ve)}", exc_info=True)
@@ -1366,22 +1999,56 @@ async def remove_tenant_from_connection(request: Request, connection_id: str):
             logger.error(f"Error disconnecting tenant from Xero: {str(e)}")
             return RedirectResponse(url=f"/settings?error=Failed to disconnect tenant from Xero: {str(e)}", status_code=303)
     
-    # Remove tenant from connection
-    success = connection_manager.remove_tenant(connection_id, tenant_id)
-    
-    if success:
-        # Check if connection is now empty
-        remaining_tenants = connection_manager.get_all_tenants_for_connection(connection_id)
-        if not remaining_tenants:
-            # Delete empty connection
-            connection_manager.delete_connection(connection_id)
-            logger.info(f"Deleted empty connection {connection_id} after removing last tenant")
-            return RedirectResponse(url="/settings?deleted=true", status_code=303)
+    # Remove tenant from ALL connections sharing the same refresh_token
+    refresh_token = connection.get("refresh_token")
+    if software == "xero" and refresh_token:
+        # Find all connections with the same refresh_token
+        duplicate_connections = connection_manager.get_connections_by_refresh_token(refresh_token, software="xero")
+        success_count = 0
+        for dup_conn in duplicate_connections:
+            dup_conn_id = dup_conn.get("id")
+            if dup_conn_id:
+                # Remove tenant from each duplicate connection
+                if connection_manager.remove_tenant(dup_conn_id, tenant_id):
+                    success_count += 1
+                    logger.info(f"Removed tenant {tenant_id} from connection {dup_conn_id}")
         
-        logger.info(f"Removed tenant {tenant_id} from connection {connection_id}")
-        return RedirectResponse(url="/settings?tenant_removed=true", status_code=303)
+        if success_count > 0:
+            # Check if any connection is now empty (they should all be in sync)
+            remaining_tenants = connection_manager.get_all_tenants_for_connection(connection_id)
+            if not remaining_tenants:
+                # Delete ALL empty connections sharing the same refresh_token
+                empty_connections = connection_manager.get_connections_by_refresh_token(refresh_token, software="xero")
+                deleted_count = 0
+                for empty_conn in empty_connections:
+                    empty_conn_id = empty_conn.get("id")
+                    if empty_conn_id:
+                        connection_manager.delete_connection(empty_conn_id)
+                        deleted_count += 1
+                        logger.info(f"Deleted empty duplicate connection {empty_conn_id} (shared refresh_token)")
+                logger.info(f"Deleted {deleted_count} empty connection(s) with refresh_token {refresh_token[:20]}...")
+                return RedirectResponse(url="/settings?deleted=true", status_code=303)
+            
+            logger.info(f"Removed tenant {tenant_id} from {success_count} connection(s)")
+            return RedirectResponse(url="/settings?tenant_removed=true", status_code=303)
+        else:
+            return RedirectResponse(url="/settings?error=Failed to remove tenant", status_code=303)
     else:
-        return RedirectResponse(url="/settings?error=Failed to remove tenant", status_code=303)
+        # For non-Xero connections, use original logic
+        success = connection_manager.remove_tenant(connection_id, tenant_id)
+        
+        if success:
+            # Check if connection is now empty
+            remaining_tenants = connection_manager.get_all_tenants_for_connection(connection_id)
+            if not remaining_tenants:
+                connection_manager.delete_connection(connection_id)
+                logger.info(f"Deleted empty connection {connection_id} after removing last tenant")
+                return RedirectResponse(url="/settings?deleted=true", status_code=303)
+            
+            logger.info(f"Removed tenant {tenant_id} from connection {connection_id}")
+            return RedirectResponse(url="/settings?tenant_removed=true", status_code=303)
+        else:
+            return RedirectResponse(url="/settings?error=Failed to remove tenant", status_code=303)
 
 
 @app.post("/connections/{connection_id}/disconnect-all")
@@ -1394,12 +2061,12 @@ async def disconnect_all_tenants(request: Request, connection_id: str):
     tenants = connection_manager.get_all_tenants_for_connection(connection_id)
     software = connection.get("software")
     access_token = connection.get("access_token")
+    refresh_token = connection.get("refresh_token")
     
     # Disconnect each tenant from Xero backend
     if software == "xero" and access_token:
         # Refresh token if expired
         if connection_manager.is_token_expired(connection_id):
-            refresh_token = connection.get("refresh_token")
             if refresh_token:
                 try:
                     token_response = xero_client.refresh_token(refresh_token)
@@ -1423,52 +2090,27 @@ async def disconnect_all_tenants(request: Request, connection_id: str):
                 except Exception as e:
                     logger.warning(f"Failed to disconnect tenant {tenant.get('tenant_id')}: {str(e)}")
     
-    # Delete the connection
-    connection_manager.delete_connection(connection_id)
-    logger.info(f"Deleted connection {connection_id} and disconnected all tenants")
+    # Delete ALL connections sharing the same refresh_token (to clean up duplicates)
+    if software == "xero" and refresh_token:
+        duplicate_connections = connection_manager.get_connections_by_refresh_token(refresh_token, software="xero")
+        deleted_count = 0
+        for dup_conn in duplicate_connections:
+            dup_conn_id = dup_conn.get("id")
+            if dup_conn_id:
+                connection_manager.delete_connection(dup_conn_id)
+                deleted_count += 1
+                logger.info(f"Deleted duplicate connection {dup_conn_id} (shared refresh_token)")
+        logger.info(f"Deleted {deleted_count} connection(s) with refresh_token {refresh_token[:20]}...")
+    else:
+        # For non-Xero or connections without refresh_token, just delete this one
+        connection_manager.delete_connection(connection_id)
+        logger.info(f"Deleted connection {connection_id}")
+    
     return RedirectResponse(url="/settings?disconnected=true", status_code=303)
 
 
 # OAuth Callback Routes
-
-@app.get("/callback")
-async def callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
-    """Handle OAuth callback (legacy route for backward compatibility)."""
-    logger.info(f"=== OAUTH CALLBACK RECEIVED (LEGACY ROUTE) ===")
-    logger.info(f"Request method: {request.method}")
-    logger.info(f"Request URL: {request.url}")
-    logger.info(f"Full request URL: {str(request.url)}")
-    logger.info(f"Query params: {dict(request.query_params)}")
-    logger.info(f"Code parameter: {'present' if code else 'missing'} - {code[:20] + '...' if code and len(code) > 20 else code}")
-    logger.info(f"State parameter: {state}")
-    logger.info(f"Error parameter: {error}")
-    logger.info(f"Session keys: {list(request.session.keys())}")
-    logger.info(f"Session oauth_state: {request.session.get('oauth_state', 'NOT SET')}")
-    logger.info(f"Session pending_connection_id: {request.session.get('pending_connection_id', 'NOT SET')}")
-    logger.info(f"Session add_tenant_mode: {request.session.get('add_tenant_mode', 'NOT SET')}")
-    
-    if error:
-        logger.error(f"=== OAUTH ERROR FROM XERO ===")
-        logger.error(f"Error code: {error}")
-        logger.error(f"Error description: {request.query_params.get('error_description', 'Not provided')}")
-        logger.error(f"All query params: {dict(request.query_params)}")
-        logger.error(f"Request headers: {dict(request.headers)}")
-        
-        # If error is invalid_request or invalid_client_id, log the full URL for debugging
-        if error in ["invalid_request", "invalid_client"]:
-            logger.error(f"=== INVALID CLIENT_ID ERROR DETAILS ===")
-            logger.error(f"Full callback URL: {request.url}")
-            logger.error(f"Client ID from config: {xero_client.client_id}")
-            logger.error(f"Redirect URI from config: {xero_client.redirect_uri}")
-            logger.error(f"Please verify these match EXACTLY in Xero Developer Portal:")
-            logger.error(f"  1. Client ID: {xero_client.client_id}")
-            logger.error(f"  2. Redirect URI: {xero_client.redirect_uri}")
-    
-    # Redirect to new callback route
-    redirect_url = f"/callback/xero?code={code}&state={state}&error={error}" if code or state or error else "/callback/xero"
-    logger.info(f"Redirecting to: {redirect_url}")
-    return RedirectResponse(url=redirect_url)
-
+# Note: The /callback route is handled above (line 269) and redirects to /callback/{software}
 
 @app.get("/callback/{software}")
 async def callback_software(request: Request, software: str, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
@@ -1536,34 +2178,101 @@ async def callback_software(request: Request, software: str, code: Optional[str]
         return RedirectResponse(url="/settings?error=No pending connection found")
     
     try:
+        logger.info(f"=== STARTING TOKEN EXCHANGE FOR {software.upper()} ===")
+        logger.info(f"Authorization code length: {len(code) if code else 0}")
+        logger.info(f"Pending connection ID: {connection_id}")
+        
         # Exchange code for tokens based on software
         if software == "xero":
-            token_response = xero_client.get_access_token(code)
+            import asyncio
+            logger.info("=== STEP 1: TOKEN EXCHANGE ===")
+            logger.info(f"Calling xero_client.get_access_token() with code length: {len(code) if code else 0}")
+            logger.info(f"Code preview: {code[:20] + '...' if code and len(code) > 20 else code}")
+            logger.info(f"Redirect URI: {xero_client.redirect_uri}")
+            logger.info(f"Token URL: {xero_client.token_url}")
+            
+            try:
+                token_response = await asyncio.to_thread(xero_client.get_access_token, code)
+                logger.info("=== TOKEN EXCHANGE COMPLETED ===")
+                logger.info(f"Token response keys: {list(token_response.keys()) if token_response else 'None'}")
+                logger.info(f"Token response preview: {str(token_response)[:200] if token_response else 'None'}...")
+            except Exception as token_error:
+                logger.error(f"=== TOKEN EXCHANGE FAILED ===")
+                logger.error(f"Error type: {type(token_error).__name__}")
+                logger.error(f"Error message: {str(token_error)}", exc_info=True)
+                raise
             
             access_token = token_response.get("access_token")
             refresh_token = token_response.get("refresh_token")
             expires_in = token_response.get("expires_in", 1800)
             
+            logger.info(f"=== TOKEN EXTRACTION ===")
+            logger.info(f"Access token present: {bool(access_token)}")
+            logger.info(f"Access token length: {len(access_token) if access_token else 0}")
+            logger.info(f"Access token preview: {access_token[:30] + '...' if access_token and len(access_token) > 30 else access_token}")
+            logger.info(f"Refresh token present: {bool(refresh_token)}")
+            logger.info(f"Refresh token length: {len(refresh_token) if refresh_token else 0}")
+            logger.info(f"Expires in: {expires_in} seconds")
+            
             if not access_token:
+                logger.error("=== ERROR: NO ACCESS TOKEN IN RESPONSE ===")
+                logger.error(f"Full token response: {token_response}")
                 raise ValueError("No access token in response")
             
             # Get connected organizations (tenants)
-            tenants = xero_client.get_connections(access_token)
+            logger.info("=== STEP 2: GETTING CONNECTIONS ===")
+            logger.info(f"Calling xero_client.get_connections() with access_token length: {len(access_token) if access_token else 0}")
+            try:
+                tenants = await asyncio.to_thread(xero_client.get_connections, access_token)
+                logger.info("=== GET CONNECTIONS COMPLETED ===")
+            except Exception as connections_error:
+                logger.error(f"=== GET CONNECTIONS FAILED ===")
+                logger.error(f"Error type: {type(connections_error).__name__}")
+                logger.error(f"Error message: {str(connections_error)}", exc_info=True)
+                raise
+            
+            logger.info(f"=== XERO CONNECTIONS API RESPONSE ===")
+            logger.info(f"Tenants type: {type(tenants)}")
+            logger.info(f"Number of tenants returned by Xero: {len(tenants) if tenants else 0}")
+            logger.info(f"Tenants response (full): {tenants}")
             
             if not tenants:
+                logger.error("=== ERROR: NO TENANTS RETURNED ===")
+                logger.error(f"Tenants value: {tenants}")
                 raise ValueError("No Xero organizations connected")
             
             # Build tenants list from OAuth response
+            logger.info("=== STEP 3: BUILDING TENANTS LIST ===")
             tenants_list = []
-            for tenant in tenants:
+            for idx, tenant in enumerate(tenants):
+                logger.info(f"Processing tenant {idx + 1}/{len(tenants)}")
+                logger.info(f"  Raw tenant data: {tenant}")
+                logger.info(f"  Tenant keys: {list(tenant.keys()) if isinstance(tenant, dict) else 'Not a dict'}")
+                
                 tenant_id = tenant.get("tenantId")
                 tenant_name = tenant.get("tenantName")
                 xero_connection_id = tenant.get("id")  # This is the connection ID needed for DELETE
-                tenants_list.append({
+                
+                logger.info(f"  Extracted tenant_id: {tenant_id}")
+                logger.info(f"  Extracted tenant_name: {tenant_name}")
+                logger.info(f"  Extracted xero_connection_id: {xero_connection_id}")
+                
+                if not tenant_id:
+                    logger.warning(f"  Skipping tenant {idx + 1} - missing tenantId")
+                    continue
+                
+                tenant_entry = {
                     "tenant_id": tenant_id,
                     "tenant_name": tenant_name,
                     "xero_connection_id": xero_connection_id
-                })
+                }
+                tenants_list.append(tenant_entry)
+                logger.info(f"  Added tenant to list: {tenant_name} (ID: {tenant_id[:8]}...)")
+            
+            logger.info(f"=== TENANTS LIST BUILT ===")
+            logger.info(f"Total tenants to process: {len(tenants_list)}")
+            for idx, t in enumerate(tenants_list):
+                logger.info(f"  {idx + 1}. {t.get('tenant_name')} (ID: {t.get('tenant_id', 'N/A')[:8]}..., Connection ID: {t.get('xero_connection_id', 'N/A')})")
             
             if add_tenant_mode:
                 # Adding tenants to existing connection
@@ -1574,17 +2283,39 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                 existing_tenants = connection_manager.get_all_tenants_for_connection(connection_id)
                 existing_tenant_ids = {t.get("tenant_id") for t in existing_tenants}
                 
+                logger.info(f"=== ADDING TENANTS TO EXISTING CONNECTION ===")
+                logger.info(f"Connection ID: {connection_id}")
+                logger.info(f"Existing tenants: {len(existing_tenants)}")
+                logger.info(f"Tenants to add: {len(tenants_list)}")
+                
                 added_count = 0
-                for tenant_data in tenants_list:
+                skipped_count = 0
+                for idx, tenant_data in enumerate(tenants_list):
                     tenant_id = tenant_data.get("tenant_id")
-                    if tenant_id not in existing_tenant_ids:
+                    tenant_name = tenant_data.get("tenant_name")
+                    
+                    logger.info(f"Processing tenant {idx + 1}/{len(tenants_list)}: {tenant_name} (ID: {tenant_id[:8] if tenant_id else 'N/A'}...)")
+                    
+                    if tenant_id in existing_tenant_ids:
+                        logger.info(f"  Tenant {tenant_name} already exists, skipping")
+                        skipped_count += 1
+                        continue
+                    
+                    logger.info(f"  Adding tenant {tenant_name} to connection {connection_id}")
+                    try:
                         connection_manager.add_tenant(
                             connection_id,
                             tenant_id,
-                            tenant_data.get("tenant_name"),
+                            tenant_name,
                             tenant_data.get("xero_connection_id")
                         )
                         added_count += 1
+                        logger.info(f"  Successfully added tenant {tenant_name}")
+                    except Exception as e:
+                        logger.error(f"  Failed to add tenant {tenant_name}: {str(e)}", exc_info=True)
+                
+                logger.info(f"=== TENANT ADDITION SUMMARY ===")
+                logger.info(f"Added: {added_count}, Skipped (already exist): {skipped_count}, Total processed: {len(tenants_list)}")
                 
                 # Update tokens for the connection
                 connection_manager.update_connection(
@@ -1595,62 +2326,245 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                 )
                 
                 logger.info(f"Added {added_count} tenant(s) to connection {connection_id}")
+                
+                # Clear OAuth state and pending connection
+                request.session.pop("oauth_state", None)
+                request.session.pop("pending_connection_id", None)
+                request.session.pop("pending_software", None)
+                request.session.pop("add_tenant_mode", None)
+                
+                logger.info(f"Successfully added tenant(s) to connection {connection_id}")
+                return RedirectResponse(url="/settings?reconnected=true", status_code=303)
             else:
                 # Creating new connection
+                logger.info("=== STEP 4: CREATING NEW CONNECTION ===")
+                logger.info(f"Pending connection ID: {connection_id}")
                 pending_connection = connection_manager.get_connection(connection_id)
+                logger.info(f"Pending connection found: {pending_connection is not None}")
+                if pending_connection:
+                    logger.info(f"Pending connection data: {pending_connection}")
+                
                 connection_name = pending_connection.get("name", "Xero Connection") if pending_connection else "Xero Connection"
                 category = pending_connection.get("category", "finance") if pending_connection else "finance"
+                logger.info(f"Connection name: {connection_name}")
+                logger.info(f"Category: {category}")
                 
                 # Check if a connection with the same refresh_token already exists
+                logger.info(f"=== CHECKING FOR EXISTING CONNECTION ===")
+                logger.info(f"Refresh token to check: {refresh_token[:20] + '...' if refresh_token and len(refresh_token) > 20 else refresh_token}")
                 existing_connection = connection_manager.get_connection_by_refresh_token(refresh_token, software="xero")
+                logger.info(f"Existing connection found: {existing_connection is not None}")
+                if existing_connection:
+                    logger.info(f"Existing connection ID: {existing_connection.get('id')}")
+                    logger.info(f"Existing connection data: {existing_connection}")
                 
                 if existing_connection:
                     # Add tenants to existing connection (skip duplicates)
+                    logger.info("=== MERGING INTO EXISTING CONNECTION ===")
                     existing_connection_id = existing_connection.get("id")
+                    logger.info(f"Existing connection ID: {existing_connection_id}")
+                    
                     existing_tenants = connection_manager.get_all_tenants_for_connection(existing_connection_id)
                     existing_tenant_ids = {t.get("tenant_id") for t in existing_tenants}
+                    logger.info(f"Existing tenants count: {len(existing_tenants)}")
+                    logger.info(f"Existing tenant IDs: {list(existing_tenant_ids)}")
                     
                     added_count = 0
-                    for tenant_data in tenants_list:
+                    for idx, tenant_data in enumerate(tenants_list):
                         tenant_id = tenant_data.get("tenant_id")
+                        tenant_name = tenant_data.get("tenant_name")
+                        logger.info(f"Processing tenant {idx + 1}/{len(tenants_list)}: {tenant_name} (ID: {tenant_id[:8] if tenant_id else 'N/A'}...)")
+                        
                         if tenant_id not in existing_tenant_ids:
-                            connection_manager.add_tenant(
-                                existing_connection_id,
-                                tenant_id,
-                                tenant_data.get("tenant_name"),
-                                tenant_data.get("xero_connection_id")
-                            )
-                            added_count += 1
+                            logger.info(f"  Adding tenant {tenant_name} to existing connection")
+                            try:
+                                connection_manager.add_tenant(
+                                    existing_connection_id,
+                                    tenant_id,
+                                    tenant_data.get("tenant_name"),
+                                    tenant_data.get("xero_connection_id")
+                                )
+                                added_count += 1
+                                logger.info(f"  Successfully added tenant {tenant_name}")
+                            except Exception as add_error:
+                                logger.error(f"  Failed to add tenant {tenant_name}: {str(add_error)}", exc_info=True)
+                        else:
+                            logger.info(f"  Tenant {tenant_name} already exists, skipping")
                     
                     # Update tokens for the existing connection
-                    connection_manager.update_connection(
-                        existing_connection_id,
-                        access_token=access_token,
-                        refresh_token=refresh_token,
-                        expires_in=expires_in
-                    )
+                    logger.info(f"=== UPDATING TOKENS FOR EXISTING CONNECTION ===")
+                    logger.info(f"Connection ID: {existing_connection_id}")
+                    logger.info(f"Access token length: {len(access_token) if access_token else 0}")
+                    logger.info(f"Refresh token length: {len(refresh_token) if refresh_token else 0}")
+                    logger.info(f"Expires in: {expires_in}")
+                    
+                    try:
+                        connection_manager.update_connection(
+                            existing_connection_id,
+                            access_token=access_token,
+                            refresh_token=refresh_token,
+                            expires_in=expires_in
+                        )
+                        logger.info("Successfully updated connection tokens")
+                    except Exception as update_error:
+                        logger.error(f"Failed to update connection tokens: {str(update_error)}", exc_info=True)
+                        raise
                     
                     logger.info(f"Added {added_count} tenant(s) to existing connection {existing_connection_id}")
+                    
+                    # Delete the pending placeholder connection
+                    if pending_connection:
+                        logger.info(f"=== DELETING PLACEHOLDER CONNECTION ===")
+                        logger.info(f"Placeholder connection ID: {connection_id}")
+                        try:
+                            connection_manager.delete_connection(connection_id)
+                            logger.info(f"Successfully deleted placeholder connection: {connection_id}")
+                        except Exception as delete_error:
+                            logger.warning(f"Could not delete placeholder connection: {str(delete_error)}")
+                    
+                    # Clear OAuth state and pending connection
+                    logger.info("=== CLEARING SESSION DATA ===")
+                    request.session.pop("oauth_state", None)
+                    request.session.pop("pending_connection_id", None)
+                    request.session.pop("pending_software", None)
+                    request.session.pop("add_tenant_mode", None)
+                    logger.info("Session data cleared")
+                    
+                    logger.info(f"=== SUCCESS: MERGED INTO EXISTING CONNECTION ===")
+                    logger.info(f"Successfully authenticated {software} (merged into existing connection)")
+                    return RedirectResponse(url="/settings?reconnected=true", status_code=303)
                 else:
-                    # Create new connection with all tenants
-                    new_connection_id = connection_manager.add_connection(
-                        category=category,
-                        software="xero",
-                        name=connection_name,
-                        access_token=access_token,
-                        refresh_token=refresh_token,
-                        expires_in=expires_in,
-                        tenants=tenants_list
-                    )
-                    logger.info(f"Created new connection {new_connection_id} ({connection_name}) with {len(tenants_list)} tenant(s)")
+                    # Check if any of the tenants already exist in another connection
+                    # This prevents duplicate connections for the same tenant from different OAuth flows
+                    all_existing_connections = connection_manager.get_all_xero_connections()
+                    tenant_to_connection_map = {}
+                    for existing_conn in all_existing_connections:
+                        existing_tenants = connection_manager.get_all_tenants_for_connection(existing_conn.get("id"))
+                        for tenant in existing_tenants:
+                            tenant_id = tenant.get("tenant_id")
+                            if tenant_id:
+                                tenant_to_connection_map[tenant_id] = existing_conn.get("id")
+                    
+                    # Check if any tenant from this OAuth flow already exists
+                    matching_connection_id = None
+                    for tenant_data in tenants_list:
+                        tenant_id = tenant_data.get("tenant_id")
+                        if tenant_id and tenant_id in tenant_to_connection_map:
+                            matching_connection_id = tenant_to_connection_map[tenant_id]
+                            logger.info(f"Found existing connection {matching_connection_id} for tenant {tenant_id}")
+                            break
+                    
+                    if matching_connection_id:
+                        # Merge into existing connection instead of creating duplicate
+                        existing_tenants = connection_manager.get_all_tenants_for_connection(matching_connection_id)
+                        existing_tenant_ids = {t.get("tenant_id") for t in existing_tenants}
+                        
+                        added_count = 0
+                        for tenant_data in tenants_list:
+                            tenant_id = tenant_data.get("tenant_id")
+                            if tenant_id not in existing_tenant_ids:
+                                connection_manager.add_tenant(
+                                    matching_connection_id,
+                                    tenant_id,
+                                    tenant_data.get("tenant_name"),
+                                    tenant_data.get("xero_connection_id")
+                                )
+                                added_count += 1
+                        
+                        # Update tokens - use the newer refresh_token from this OAuth flow
+                        connection_manager.update_connection(
+                            matching_connection_id,
+                            access_token=access_token,
+                            refresh_token=refresh_token,
+                            expires_in=expires_in
+                        )
+                        
+                        logger.info(f"Merged OAuth flow into existing connection {matching_connection_id} (added {added_count} tenant(s))")
+                        
+                        # Delete the pending placeholder connection
+                        if pending_connection:
+                            try:
+                                connection_manager.delete_connection(connection_id)
+                                logger.info(f"Deleted placeholder connection: {connection_id}")
+                            except:
+                                pass  # Ignore if already deleted
+                        
+                        # Clear OAuth state and pending connection
+                        request.session.pop("oauth_state", None)
+                        request.session.pop("pending_connection_id", None)
+                        request.session.pop("pending_software", None)
+                        request.session.pop("add_tenant_mode", None)
+                        
+                        logger.info(f"Successfully authenticated {software} (merged into existing connection)")
+                        return RedirectResponse(url="/settings?reconnected=true", status_code=303)
+                    else:
+                        # Create new connection with all tenants (truly new tenant)
+                        logger.info(f"=== CREATING NEW CONNECTION ===")
+                        logger.info(f"Connection name: {connection_name}")
+                        logger.info(f"Category: {category}")
+                        logger.info(f"Software: xero")
+                        logger.info(f"Access token length: {len(access_token) if access_token else 0}")
+                        logger.info(f"Refresh token length: {len(refresh_token) if refresh_token else 0}")
+                        logger.info(f"Expires in: {expires_in}")
+                        logger.info(f"Tenants to add: {len(tenants_list)}")
+                        for idx, t in enumerate(tenants_list):
+                            logger.info(f"  {idx + 1}. {t.get('tenant_name')} (ID: {t.get('tenant_id', 'N/A')[:8]}..., Connection ID: {t.get('xero_connection_id', 'N/A')})")
+                        
+                        try:
+                            logger.info("Calling connection_manager.add_connection()...")
+                            new_connection_id = connection_manager.add_connection(
+                                category=category,
+                                software="xero",
+                                name=connection_name,
+                                access_token=access_token,
+                                refresh_token=refresh_token,
+                                expires_in=expires_in,
+                                tenants=tenants_list
+                            )
+                            logger.info(f"=== CONNECTION CREATED SUCCESSFULLY ===")
+                            logger.info(f"New connection ID: {new_connection_id}")
+                            logger.info(f"Connection name: {connection_name}")
+                            logger.info(f"Tenants added: {len(tenants_list)}")
+                        except Exception as create_error:
+                            logger.error(f"=== ERROR CREATING CONNECTION ===")
+                            logger.error(f"Error type: {type(create_error).__name__}")
+                            logger.error(f"Error message: {str(create_error)}", exc_info=True)
+                            raise
+                        
+                        # Verify tenants were added
+                        logger.info(f"=== VERIFYING CONNECTION ===")
+                        try:
+                            verify_tenants = connection_manager.get_all_tenants_for_connection(new_connection_id)
+                            logger.info(f"Verification: Connection {new_connection_id} now has {len(verify_tenants)} tenant(s)")
+                            for t in verify_tenants:
+                                logger.info(f"  - {t.get('tenant_name')} (ID: {t.get('tenant_id', 'N/A')[:8]}...)")
+                            
+                            if len(verify_tenants) != len(tenants_list):
+                                logger.warning(f"WARNING: Expected {len(tenants_list)} tenants but found {len(verify_tenants)}")
+                        except Exception as verify_error:
+                            logger.error(f"Error verifying connection: {str(verify_error)}", exc_info=True)
                 
                 # Delete the pending placeholder connection
+                logger.info("=== CLEANING UP PLACEHOLDER CONNECTION ===")
                 if pending_connection:
+                    logger.info(f"Placeholder connection ID: {connection_id}")
                     try:
                         connection_manager.delete_connection(connection_id)
-                        logger.info(f"Deleted placeholder connection: {connection_id}")
-                    except:
-                        pass  # Ignore if already deleted
+                        logger.info(f"Successfully deleted placeholder connection: {connection_id}")
+                    except Exception as delete_error:
+                        logger.warning(f"Could not delete placeholder connection: {str(delete_error)}")
+                
+                # Clear OAuth state and pending connection
+                logger.info("=== CLEARING SESSION DATA ===")
+                request.session.pop("oauth_state", None)
+                request.session.pop("pending_connection_id", None)
+                request.session.pop("pending_software", None)
+                request.session.pop("add_tenant_mode", None)
+                logger.info("Session data cleared")
+                
+                logger.info(f"=== SUCCESS: OAUTH FLOW COMPLETED ===")
+                logger.info(f"Successfully authenticated {software}")
+                return RedirectResponse(url="/settings?reconnected=true", status_code=303)
             
         elif software == "quickbooks":
             # QuickBooks integration is under construction
@@ -1660,23 +2574,33 @@ async def callback_software(request: Request, software: str, code: Optional[str]
             request.session.pop("pending_software", None)
             
             logger.info(f"QuickBooks connection attempted but not yet implemented: {connection_id}")
-            return RedirectResponse(url="/settings?error=QuickBooks integration is currently under construction. Please check back soon!")
+            return RedirectResponse(url="/settings?error=QuickBooks integration is currently under construction. Please check back soon!", status_code=303)
         
         else:
-            return RedirectResponse(url="/settings?error=Unsupported software type")
+            # Clear OAuth state and pending connection
+            request.session.pop("oauth_state", None)
+            request.session.pop("pending_connection_id", None)
+            request.session.pop("pending_software", None)
+            return RedirectResponse(url="/settings?error=Unsupported software type", status_code=303)
+    
+    except Exception as e:
+        logger.error(f"=== ERROR DURING OAUTH CALLBACK PROCESSING ===")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Software: {software}")
+        logger.error(f"Connection ID from session: {request.session.get('pending_connection_id', 'NOT SET')}")
+        logger.error(f"Add tenant mode: {request.session.get('add_tenant_mode', False)}")
+        logger.error(f"OAuth state in session: {bool(request.session.get('oauth_state'))}")
+        logger.error(f"Full traceback:", exc_info=True)
+        logger.error(f"Add tenant mode: {request.session.get('add_tenant_mode', False)}")
         
-        # Clear OAuth state and pending connection
+        # Clear OAuth state on error
         request.session.pop("oauth_state", None)
         request.session.pop("pending_connection_id", None)
         request.session.pop("pending_software", None)
         request.session.pop("add_tenant_mode", None)
         
-        logger.info(f"Successfully authenticated {software} - created/updated {len(created_connections)} tenant connections")
-        return RedirectResponse(url="/settings?reconnected=true")
-    
-    except Exception as e:
-        logger.error(f"Error during token exchange for {software}: {str(e)}")
-        return RedirectResponse(url=f"/settings?error=Authentication failed: {str(e)}")
+        return RedirectResponse(url=f"/settings?error=Authentication failed: {str(e)}", status_code=303)
 
 
 # Legacy routes for backward compatibility
@@ -1721,150 +2645,239 @@ async def reconnect_xero(request: Request):
 
 @app.get("/payroll-risk", response_class=HTMLResponse)
 async def payroll_risk(request: Request):
-    """Display payroll risk page."""
-    # Check authentication and token expiration
-    if not is_authenticated(request):
-        return RedirectResponse(url="/settings?expired=true")
+    """Payroll Risk Early Warning - List view showing all analyses."""
+    try:
+        # Get all analyses from database
+        analyses = payroll_risk_db.get_all_analyses()
+        
+        # Get all Xero connections (not just active ones) for the new analysis modal
+        # We'll refresh tokens when starting the analysis if needed
+        all_connections = connection_manager.get_all_connections()
+        xero_connections = [conn for conn in all_connections if conn.get("software") == "xero"]
+        
+        # Ensure tenants are loaded for each connection
+        for conn in xero_connections:
+            if not conn.get("tenants"):
+                tenants = connection_manager.get_all_tenants_for_connection(conn["id"])
+                conn["tenants"] = tenants if tenants else []
+        
+        logger.info(f"Payroll risk page - Total Xero connections: {len(xero_connections)}")
+        if xero_connections:
+            logger.info(f"Xero connection names: {[c.get('name') for c in xero_connections]}")
+        
+        # Get categories for template compatibility
+        selector_data = get_connections_for_selector()
+        
+        return templates.TemplateResponse(
+            "payroll-risk.html",
+            {
+                "request": request,
+                "view_mode": "list",
+                "analyses": analyses,
+                "connections": xero_connections,
+                "categories": selector_data["categories"],
+                "error": None
+            }
+        )
     
-    # Check and refresh token if needed
-    if not check_and_refresh_token(request):
-        return RedirectResponse(url="/settings?expired=true")
+    except Exception as e:
+        logger.error(f"Error in payroll-risk route: {str(e)}", exc_info=True)
+        selector_data = get_connections_for_selector()
+        return templates.TemplateResponse(
+            "payroll-risk.html",
+            {
+                "request": request,
+                "view_mode": "list",
+                "analyses": [],
+                "connections": selector_data["connections"],
+                "categories": selector_data["categories"],
+                "error": f"Failed to load payroll risk page: {str(e)}"
+            }
+        )
+
+
+@app.get("/payroll-risk/{analysis_id}", response_class=HTMLResponse)
+async def payroll_risk_details(request: Request, analysis_id: str):
+    """Payroll Risk Analysis Details page."""
+    try:
+        # Get analysis from database
+        analysis = payroll_risk_db.get_analysis(analysis_id)
+        
+        if not analysis:
+            return RedirectResponse(url="/payroll-risk?error=Analysis not found", status_code=303)
+        
+        # Get all Xero connections for template compatibility
+        all_connections = connection_manager.get_all_connections()
+        xero_connections = [conn for conn in all_connections if conn.get("software") == "xero"]
+        
+        # Ensure tenants are loaded
+        for conn in xero_connections:
+            if not conn.get("tenants"):
+                tenants = connection_manager.get_all_tenants_for_connection(conn["id"])
+                conn["tenants"] = tenants if tenants else []
+        
+        # Get categories for template compatibility
+        selector_data = get_connections_for_selector()
+        
+        return templates.TemplateResponse(
+            "payroll-risk.html",
+            {
+                "request": request,
+                "view_mode": "details",
+                "analysis": analysis,
+                "connections": xero_connections,
+                "categories": selector_data["categories"],
+                "error": None
+            }
+        )
     
-    tenant_name = request.session.get("tenant_name", "Unknown")
-    
-    # Check if analysis was requested
-    run_analysis = request.query_params.get("run", "false").lower() == "true"
-    result = None
-    error = None
-    
-    # Default to async mode
-    async_param = request.query_params.get("async", "true")
-    use_async = async_param.lower() == "true"
-    
-    if run_analysis:
-        if use_async:
-            # Generate a unique session ID for progress tracking
-            session_id = request.session.get("session_id")
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                request.session["session_id"] = session_id
-            
-            progress_key = f"payroll_risk_progress_{session_id}"
-            
-            # Check if there's already a result
-            if progress_key in _payroll_risk_progress:
-                progress_data = _payroll_risk_progress[progress_key]
-                if progress_data["status"] == "complete" and progress_data["data"]:
-                    # Clear the progress and return the result
-                    result = progress_data["data"]
-                    del _payroll_risk_progress[progress_key]
-                    return templates.TemplateResponse(
-                        "payroll-risk.html",
-                        {
-                            "request": request,
-                            "tenant_name": tenant_name,
-                            "result": result,
-                            "error": error,
-                            "has_result": result is not None,
-                            "run_analysis": run_analysis,
-                            "async_mode": True
-                        }
-                    )
-                elif progress_data["status"] == "error":
-                    error_msg = progress_data.get("error", "Unknown error")
-                    del _payroll_risk_progress[progress_key]
-                    return templates.TemplateResponse(
-                        "payroll-risk.html",
-                        {
-                            "request": request,
-                            "tenant_name": tenant_name,
-                            "result": None,
-                            "error": f"Failed to run analysis: {error_msg}",
-                            "has_result": False,
-                            "run_analysis": run_analysis,
-                            "async_mode": True
-                        }
-                    )
-            
-            # Start background task if not already running
-            access_token = request.session.get("access_token")
-            if not access_token:
-                error = "No access token available. Please reconnect to Xero."
+    except Exception as e:
+        logger.error(f"Error loading payroll risk details: {str(e)}", exc_info=True)
+        return RedirectResponse(url=f"/payroll-risk?error={str(e)}", status_code=303)
+
+
+@app.post("/payroll-risk/new", response_class=RedirectResponse)
+async def start_payroll_risk_analysis(request: Request):
+    """Start a new payroll risk analysis."""
+    try:
+        form_data = await request.form()
+        connection_id = form_data.get("connection_id")
+        tenant_id = form_data.get("tenant_id")
+        
+        if not connection_id:
+            return RedirectResponse(url="/payroll-risk?error=Please select a connection", status_code=303)
+        
+        # Get connection details
+        connection = connection_manager.get_connection(connection_id)
+        if not connection:
+            return RedirectResponse(url="/payroll-risk?error=Connection not found", status_code=303)
+        
+        if connection.get("software") != "xero":
+            return RedirectResponse(url="/payroll-risk?error=Payroll risk analysis is only available for Xero connections", status_code=303)
+        
+        # Get tenant details if provided
+        tenant_name = None
+        if tenant_id:
+            tenants = connection_manager.get_all_tenants_for_connection(connection_id)
+            tenant = next((t for t in tenants if t.get("tenant_id") == tenant_id), None)
+            if tenant:
+                tenant_name = tenant.get("tenant_name")
             else:
-                if progress_key not in _payroll_risk_progress or _payroll_risk_progress[progress_key]["status"] != "loading":
-                    # Start background task
-                    llm_model = config.OPENAI_MODEL if config.LLM_PROVIDER == "openai" else None
-                    asyncio.create_task(_run_payroll_risk_async(session_id, access_token, llm_model))
-            
-            # Return loading page
-            return templates.TemplateResponse(
-                "payroll-risk.html",
-                {
-                    "request": request,
-                    "tenant_name": tenant_name,
-                    "result": None,
-                    "error": error,
-                    "has_result": False,
-                    "run_analysis": run_analysis,
-                    "async_mode": True,
-                    "session_id": session_id
-                }
-            )
-        else:
-            # Synchronous mode (original behavior)
+                return RedirectResponse(url="/payroll-risk?error=Tenant not found", status_code=303)
+        
+        # Get access token directly from connection
+        access_token = connection.get("access_token")
+        refresh_token = connection.get("refresh_token")
+        
+        # Refresh token if expired
+        if refresh_token:
             try:
-                access_token = request.session.get("access_token")
-                if not access_token:
-                    error = "No access token available. Please reconnect to Xero."
-                else:
-                    logger.info("Running payroll risk analysis...")
-                    agent = PayrollRiskAgent(
-                        bearer_token=access_token,
-                        llm_model=config.OPENAI_MODEL if config.LLM_PROVIDER == "openai" else None
-                    )
-                    result = await agent.run()
-                    logger.info(f"Analysis complete. Status: {result.health_status.value}")
-            except Exception as e:
-                logger.error(f"Error running payroll risk analysis: {str(e)}", exc_info=True)
-                error = f"Failed to run analysis: {str(e)}"
+                # Check if token is expired
+                token_created_at_str = connection.get("token_created_at")
+                expires_in = connection.get("expires_in", 1800)
+                
+                if token_created_at_str:
+                    token_created_at = datetime.fromisoformat(token_created_at_str)
+                    expiration_time = token_created_at + timedelta(seconds=expires_in)
+                    if datetime.now() >= (expiration_time - timedelta(seconds=60)):
+                        # Token expired, refresh it
+                        logger.info(f"Token expired, refreshing for analysis {analysis_id}")
+                        token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
+                        access_token = token_response.get("access_token")
+                        new_refresh_token = token_response.get("refresh_token", refresh_token)
+                        
+                        # Update connection with new tokens
+                        connection_manager.update_connection(
+                            connection_id,
+                            access_token=access_token,
+                            refresh_token=new_refresh_token,
+                            expires_in=token_response.get("expires_in", 1800)
+                        )
+            except Exception as refresh_error:
+                logger.error(f"Error refreshing token: {str(refresh_error)}")
+                return RedirectResponse(url="/payroll-risk?error=Failed to refresh token. Please reconnect.", status_code=303)
+        
+        if not access_token:
+            return RedirectResponse(url="/payroll-risk?error=No access token available. Please reconnect.", status_code=303)
+        
+        # Create new analysis record
+        analysis_id = str(uuid.uuid4())
+        connection_name = connection.get("name", "Unknown Connection")
+        
+        payroll_risk_db.create_analysis(
+            analysis_id=analysis_id,
+            connection_id=connection_id,
+            connection_name=connection_name,
+            tenant_id=tenant_id,
+            tenant_name=tenant_name
+        )
+        
+        # Start background task
+        llm_model = config.OPENAI_MODEL if config.LLM_PROVIDER == "openai" else None
+        asyncio.create_task(_run_payroll_risk_async(
+            analysis_id=analysis_id,
+            connection_id=connection_id,
+            connection_name=connection_name,
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            access_token=access_token,
+            llm_model=llm_model
+        ))
+        
+        logger.info(f"Started new payroll risk analysis: {analysis_id}")
+        return RedirectResponse(url=f"/payroll-risk/{analysis_id}", status_code=303)
     
-    return templates.TemplateResponse(
-        "payroll-risk.html",
-        {
-            "request": request,
-            "tenant_name": tenant_name,
-            "result": result,
-            "error": error,
-            "has_result": result is not None,
-            "run_analysis": run_analysis,
-            "async_mode": use_async if run_analysis else False
-        }
-    )
+    except Exception as e:
+        logger.error(f"Error starting payroll risk analysis: {str(e)}", exc_info=True)
+        return RedirectResponse(url=f"/payroll-risk?error={str(e)}", status_code=303)
 
 
-@app.get("/payroll-risk/progress")
-async def payroll_risk_progress(request: Request):
-    """Get progress status for payroll risk analysis."""
-    session_id = request.session.get("session_id")
-    if not session_id:
-        return JSONResponse({"status": "error", "message": "No session ID"})
-    
-    progress_key = f"payroll_risk_progress_{session_id}"
-    
-    if progress_key not in _payroll_risk_progress:
+@app.get("/payroll-risk/{analysis_id}/progress", response_class=JSONResponse)
+async def payroll_risk_progress(request: Request, analysis_id: str):
+    """Get progress for a specific analysis."""
+    try:
+        # Check in-memory progress first
+        progress_key = f"payroll_risk_progress_{analysis_id}"
+        if progress_key in _payroll_risk_progress:
+            progress_data = _payroll_risk_progress[progress_key]
+            return JSONResponse({
+                "status": progress_data["status"],
+                "progress": progress_data["progress"],
+                "message": progress_data["message"],
+                "error": progress_data.get("error")
+            })
+        
+        # Fall back to database
+        analysis = payroll_risk_db.get_analysis(analysis_id)
+        if not analysis:
+            return JSONResponse({"error": "Analysis not found"}, status_code=404)
+        
         return JSONResponse({
-            "status": "not_started",
-            "progress": 0,
-            "message": "Not started"
+            "status": analysis["status"],
+            "progress": analysis.get("progress", 0),
+            "message": analysis.get("progress_message", ""),
+            "error": analysis.get("error_message")
         })
     
-    progress_data = _payroll_risk_progress[progress_key]
-    return JSONResponse({
-        "status": progress_data["status"],
-        "progress": progress_data["progress"],
-        "message": progress_data["message"],
-        "error": progress_data.get("error")
-    })
+    except Exception as e:
+        logger.error(f"Error getting progress: {str(e)}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/connections/{connection_id}/tenants", response_class=JSONResponse)
+async def get_connection_tenants(request: Request, connection_id: str):
+    """Get tenants for a connection."""
+    try:
+        connection = connection_manager.get_connection(connection_id)
+        if not connection:
+            return JSONResponse({"error": "Connection not found"}, status_code=404)
+        
+        tenants = connection_manager.get_all_tenants_for_connection(connection_id)
+        return JSONResponse({"tenants": tenants})
+    
+    except Exception as e:
+        logger.error(f"Error getting tenants: {str(e)}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.get("/logout")
@@ -2278,126 +3291,588 @@ async def _process_manual_journals_content(
     return processed_content
 
 
+def _format_date(date_str: str) -> str:
+    """Format date string to dd-mm-yyyy format."""
+    if not date_str or date_str == 'N/A':
+        return 'N/A'
+    
+    try:
+        # Try parsing common date formats
+        from datetime import datetime
+        
+        # Try ISO format first (yyyy-mm-dd)
+        if '-' in date_str:
+            parts = date_str.split('-')
+            if len(parts) == 3:
+                # Check if it's ISO format (yyyy-mm-dd)
+                if len(parts[0]) == 4:
+                    dt = datetime.strptime(date_str[:10], '%Y-%m-%d')
+                    return dt.strftime('%d-%m-%Y')
+                # Or already dd-mm-yyyy
+                elif len(parts[2]) == 4:
+                    return date_str[:10]
+        
+        # Try other formats
+        for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%m/%d/%Y']:
+            try:
+                dt = datetime.strptime(date_str[:10], fmt)
+                return dt.strftime('%d-%m-%Y')
+            except:
+                continue
+        
+        # If all parsing fails, return original
+        return date_str[:10] if len(date_str) >= 10 else date_str
+    except Exception:
+        return date_str
+
+
+def _parse_manual_journal_text(text: str) -> Dict[str, Any]:
+    """Parse manual journal text into structured data."""
+    journal = {
+        "id": "",
+        "narration": "",
+        "date": "",
+        "status": "",
+        "journal_number": "",
+        "total": 0.0,
+        "lines": [],
+        "raw_text": text
+    }
+    
+    lines = text.split("\n")
+    current_line = {}
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if "Manual Journal ID:" in line:
+            journal["id"] = line.split(":", 1)[1].strip()
+        elif "Narration:" in line or "Description:" in line:
+            journal["narration"] = line.split(":", 1)[1].strip()
+        elif "Date:" in line:
+            date_str = line.split(":", 1)[1].strip()
+            journal["date"] = _format_date(date_str)
+        elif "Status:" in line:
+            journal["status"] = line.split(":", 1)[1].strip()
+        elif "Journal Number:" in line:
+            journal["journal_number"] = line.split(":", 1)[1].strip()
+        elif "Line Amount:" in line:
+            try:
+                amount_str = line.split(":", 1)[1].strip()
+                # Remove currency symbols and parse
+                amount = float(re.sub(r'[^\d.-]', '', amount_str))
+                current_line["lineAmount"] = amount
+            except (ValueError, IndexError):
+                pass
+        elif "Account Code:" in line:
+            current_line["accountCode"] = line.split(":", 1)[1].strip()
+        elif "Description:" in line and "Line" not in line:
+            # This might be line description
+            if "accountCode" in current_line:
+                current_line["description"] = line.split(":", 1)[1].strip()
+        elif "Tax Type:" in line:
+            current_line["taxType"] = line.split(":", 1)[1].strip()
+            # Complete line item
+            if "lineAmount" in current_line and "accountCode" in current_line:
+                journal["lines"].append(current_line.copy())
+                journal["total"] += abs(current_line.get("lineAmount", 0))
+                current_line = {}
+    
+    return journal
+
+
+def _parse_bank_transaction_text(text: str) -> Dict[str, Any]:
+    """Parse bank transaction text into structured data."""
+    transaction = {
+        "id": "",
+        "date": "",
+        "contact": "",
+        "line_items": [],
+        "total": 0.0,
+        "type": "",
+        "status": "",
+        "reference": "",
+        "raw_text": text
+    }
+    
+    lines = text.split("\n")
+    current_item = {}
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if "Bank Transaction ID:" in line or "Transaction ID:" in line:
+            transaction["id"] = line.split(":", 1)[1].strip()
+        elif "Date:" in line:
+            date_str = line.split(":", 1)[1].strip()
+            transaction["date"] = _format_date(date_str)
+        elif "Contact:" in line:
+            transaction["contact"] = line.split(":", 1)[1].strip()
+        elif "Type:" in line:
+            transaction["type"] = line.split(":", 1)[1].strip()
+        elif "Status:" in line:
+            transaction["status"] = line.split(":", 1)[1].strip()
+        elif "Reference:" in line:
+            transaction["reference"] = line.split(":", 1)[1].strip()
+        elif "Line Amount:" in line or "Amount:" in line:
+            try:
+                amount_str = line.split(":", 1)[1].strip()
+                amount = float(re.sub(r'[^\d.-]', '', amount_str))
+                current_item["amount"] = amount
+            except (ValueError, IndexError):
+                pass
+        elif "Description:" in line:
+            if "amount" in current_item:
+                current_item["description"] = line.split(":", 1)[1].strip()
+                transaction["line_items"].append(current_item.copy())
+                transaction["total"] += abs(current_item.get("amount", 0))
+                current_item = {}
+    
+    return transaction
+
+
 @app.get("/manual-journals", response_class=HTMLResponse)
 async def manual_journals(request: Request):
     """Display manual journal entries from Xero."""
-    # Check authentication and token expiration
-    if not is_authenticated(request):
-        return RedirectResponse(url="/settings?expired=true")
-    
-    # Check and refresh token if needed
-    if not check_and_refresh_token(request):
-        return RedirectResponse(url="/settings?expired=true")
-    
-    access_token = request.session.get("access_token")
-    tenant_name = request.session.get("tenant_name", "Unknown")
-    
-    mcp_client = None
-    journals = []
-    error = None
-    
     try:
-        # Initialize MCP client
-        logger.info("Initializing MCP client for manual journals...")
-        mcp_client = XeroMCPClient(bearer_token=access_token)
+        # Get selected connection and tenant using helper function
+        selection = await get_selected_connection_and_tenant(
+            request,
+            software_filter="xero",
+            require_tenant=True
+        )
         
-        # Get the raw response
-        result = await mcp_client.call_tool("list-manual-journals", {})
-        if isinstance(result, dict) and "content" in result:
-            # Process content to fix [object Object] entries
-            logger.info("Processing manual journals content to fix [object Object] entries...")
-            tenant_id = request.session.get("tenant_id")
-            journals = await _process_manual_journals_content(
-                result["content"], 
-                mcp_client,
-                access_token=access_token,
-                tenant_id=tenant_id
+        if selection["error"]:
+            return templates.TemplateResponse(
+                "manual-journals.html",
+                {
+                    "request": request,
+                    "error": selection["error"],
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selection["selected_connection"]["id"]] if selection["selected_connection"] else [],
+                    "allow_multiple": False,
+                    "selected_connection": selection["selected_connection"],
+                    "selected_tenant": selection["selected_tenant"],
+                    "journals": []
+                }
             )
-            logger.info(f"Processed {len(journals)} journal entries")
         
-        await mcp_client.close()
-        mcp_client = None
+        selected_connection = selection["selected_connection"]
+        selected_tenant = selection["selected_tenant"]
+        access_token = selection["access_token"]
+        tenant_id = selection["tenant_id"]
+        tenant_name = selection["tenant_name"]
         
-    except Exception as e:
-        logger.error(f"Error fetching manual journals: {str(e)}", exc_info=True)
-        error = str(e)
-        if mcp_client:
+        # Check if async mode is requested
+        async_param = request.query_params.get("async", "true")
+        use_async = async_param.lower() == "true"
+        
+        if use_async:
+            # Generate a unique session ID for progress tracking
+            session_id = request.session.get("session_id")
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                request.session["session_id"] = session_id
+            
+            progress_key = f"journal_progress_{session_id}"
+            
+            # Check if there's already a result
+            if progress_key in _journal_progress:
+                progress_data = _journal_progress[progress_key]
+                if progress_data["status"] == "complete" and progress_data["data"]:
+                    result_data = progress_data["data"]
+                    del _journal_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "manual-journals.html",
+                        {
+                            "request": request,
+                            "journals": result_data["journals"],
+                            "error": None,
+                            "async_mode": False,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant
+                        }
+                    )
+                elif progress_data["status"] == "error":
+                    error_msg = progress_data.get("error", "Unknown error")
+                    del _journal_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "manual-journals.html",
+                        {
+                            "request": request,
+                            "journals": [],
+                            "error": f"Failed to fetch journals: {error_msg}",
+                            "async_mode": False,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant
+                        }
+                    )
+            
+            # Start background task if not already running
+            if progress_key not in _journal_progress or _journal_progress[progress_key]["status"] != "loading":
+                asyncio.create_task(_fetch_journals_async(session_id, access_token, tenant_id))
+            
+            # Return loading page
+            return templates.TemplateResponse(
+                "manual-journals.html",
+                {
+                    "request": request,
+                    "journals": None,
+                    "error": None,
+                    "async_mode": True,
+                    "session_id": session_id,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
+                    "selected_connection": selected_connection,
+                    "selected_tenant": selected_tenant
+                }
+            )
+        else:
+            # Synchronous mode
+            mcp_client = None
+            journals = []
+            parsed_journals = []
+            error = None
+            
             try:
+                logger.info("Initializing MCP client for manual journals...")
+                mcp_client = XeroMCPClient(bearer_token=access_token)
+                
+                result = await mcp_client.call_tool("list-manual-journals", {})
+                if isinstance(result, dict) and "content" in result:
+                    logger.info("Processing manual journals content...")
+                    journals = await _process_manual_journals_content(
+                        result["content"], 
+                        mcp_client,
+                        access_token=access_token,
+                        tenant_id=tenant_id
+                    )
+                    
+                    for item in journals:
+                        if item.get("type") == "text":
+                            parsed_journal = _parse_manual_journal_text(item.get("text", ""))
+                            parsed_journals.append(parsed_journal)
+                
                 await mcp_client.close()
-            except:
-                pass
+                mcp_client = None
+                
+            except Exception as e:
+                logger.error(f"Error fetching manual journals: {str(e)}", exc_info=True)
+                error = str(e)
+                if mcp_client:
+                    try:
+                        await mcp_client.close()
+                    except:
+                        pass
+            
+            return templates.TemplateResponse(
+                "manual-journals.html",
+                {
+                    "request": request,
+                    "journals": parsed_journals,
+                    "error": error,
+                    "async_mode": False,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
+                    "selected_connection": selected_connection,
+                    "selected_tenant": selected_tenant
+                }
+            )
     
-    return templates.TemplateResponse(
-        "manual-journals.html",
-        {
-            "request": request,
-            "tenant_name": tenant_name,
-            "journals": journals,
-            "error": error
-        }
-    )
+    except Exception as e:
+        logger.error(f"Error in manual-journals route: {str(e)}", exc_info=True)
+        selector_data = get_connections_for_selector()
+        selected_connection_id = selection["selected_connection"]["id"] if 'selection' in locals() and selection["selected_connection"] else None
+        return templates.TemplateResponse(
+            "manual-journals.html",
+            {
+                "request": request,
+                "journals": [],
+                "error": f"Failed to load journals: {str(e)}",
+                "async_mode": False,
+                "connections": selector_data["connections"],
+                "categories": selector_data["categories"],
+                "selected_connection_ids": [selected_connection_id] if selected_connection_id else [],
+                "allow_multiple": False,
+                "selected_connection": selection["selected_connection"] if 'selection' in locals() and selection["selected_connection"] else None,
+                "selected_tenant": selection["selected_tenant"] if 'selection' in locals() and selection["selected_tenant"] else None
+            }
+        )
 
 
 @app.get("/bank-transactions", response_class=HTMLResponse)
 async def bank_transactions(request: Request):
     """Display bank transactions (bank feeds) from Xero."""
-    # Check authentication and token expiration
-    if not is_authenticated(request):
-        return RedirectResponse(url="/settings?expired=true")
-    
-    # Check and refresh token if needed
-    if not check_and_refresh_token(request):
-        return RedirectResponse(url="/settings?expired=true")
-    
-    access_token = request.session.get("access_token")
-    tenant_name = request.session.get("tenant_name", "Unknown")
-    
-    mcp_client = None
-    transactions = []
-    error = None
-    
     try:
-        # Initialize MCP client
-        logger.info("Initializing MCP client for bank transactions...")
-        mcp_client = XeroMCPClient(bearer_token=access_token)
+        # Get selected connection and tenant using helper function
+        selection = await get_selected_connection_and_tenant(
+            request,
+            software_filter="xero",
+            require_tenant=True
+        )
         
-        # Get all bank transactions (with pagination)
-        all_transactions = []
-        page = 1
-        while True:
-            page_transactions = await mcp_client.get_bank_transactions(page=page)
-            if not page_transactions:
-                break
-            all_transactions.extend(page_transactions)
-            if len(page_transactions) < 10:  # Less than a full page means we're done
-                break
-            page += 1
+        if selection["error"]:
+            return templates.TemplateResponse(
+                "bank-transactions.html",
+                {
+                    "request": request,
+                    "error": selection["error"],
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selection["selected_connection"]["id"]] if selection["selected_connection"] else [],
+                    "allow_multiple": False,
+                    "selected_connection": selection["selected_connection"],
+                    "selected_tenant": selection["selected_tenant"],
+                    "transactions": []
+                }
+            )
         
-        # Also get the raw response for better parsing
-        result = await mcp_client.call_tool("list-bank-transactions", {"page": 1})
-        if isinstance(result, dict) and "content" in result:
-            # Store raw content for display
-            transactions = result["content"]
+        selected_connection = selection["selected_connection"]
+        selected_tenant = selection["selected_tenant"]
+        access_token = selection["access_token"]
+        tenant_name = selection["tenant_name"]
         
-        await mcp_client.close()
-        mcp_client = None
+        # Check if async mode is requested
+        async_param = request.query_params.get("async", "true")
+        use_async = async_param.lower() == "true"
         
-    except Exception as e:
-        logger.error(f"Error fetching bank transactions: {str(e)}", exc_info=True)
-        error = str(e)
-        if mcp_client:
+        if use_async:
+            # Generate a unique session ID for progress tracking
+            session_id = request.session.get("session_id")
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                request.session["session_id"] = session_id
+            
+            progress_key = f"transaction_progress_{session_id}"
+            
+            # Check if there's already a result
+            if progress_key in _transaction_progress:
+                progress_data = _transaction_progress[progress_key]
+                if progress_data["status"] == "complete" and progress_data["data"]:
+                    result_data = progress_data["data"]
+                    del _transaction_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "bank-transactions.html",
+                        {
+                            "request": request,
+                            "transactions": result_data["transactions"],
+                            "error": None,
+                            "async_mode": False,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant
+                        }
+                    )
+                elif progress_data["status"] == "error":
+                    error_msg = progress_data.get("error", "Unknown error")
+                    del _transaction_progress[progress_key]
+                    return templates.TemplateResponse(
+                        "bank-transactions.html",
+                        {
+                            "request": request,
+                            "transactions": [],
+                            "error": f"Failed to fetch transactions: {error_msg}",
+                            "async_mode": False,
+                            "connections": selection["selector_data"]["connections"],
+                            "categories": selection["selector_data"]["categories"],
+                            "selected_connection_ids": [selected_connection["id"]],
+                            "allow_multiple": False,
+                            "selected_connection": selected_connection,
+                            "selected_tenant": selected_tenant
+                        }
+                    )
+            
+            # Start background task if not already running
+            if progress_key not in _transaction_progress or _transaction_progress[progress_key]["status"] != "loading":
+                asyncio.create_task(_fetch_transactions_async(session_id, access_token))
+            
+            # Return loading page
+            return templates.TemplateResponse(
+                "bank-transactions.html",
+                {
+                    "request": request,
+                    "transactions": None,
+                    "error": None,
+                    "async_mode": True,
+                    "session_id": session_id,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
+                    "selected_connection": selected_connection,
+                    "selected_tenant": selected_tenant
+                }
+            )
+        else:
+            # Synchronous mode
+            mcp_client = None
+            transactions = []
+            parsed_transactions = []
+            error = None
+            
             try:
+                logger.info("Initializing MCP client for bank transactions...")
+                mcp_client = XeroMCPClient(bearer_token=access_token)
+                
+                result = await mcp_client.call_tool("list-bank-transactions", {"page": 1})
+                if isinstance(result, dict) and "content" in result:
+                    transactions = result["content"]
+                    
+                    for item in transactions:
+                        if item.get("type") == "text":
+                            parsed_transaction = _parse_bank_transaction_text(item.get("text", ""))
+                            parsed_transactions.append(parsed_transaction)
+                
                 await mcp_client.close()
-            except:
-                pass
+                mcp_client = None
+                
+            except Exception as e:
+                logger.error(f"Error fetching bank transactions: {str(e)}", exc_info=True)
+                error = str(e)
+                if mcp_client:
+                    try:
+                        await mcp_client.close()
+                    except:
+                        pass
+            
+            return templates.TemplateResponse(
+                "bank-transactions.html",
+                {
+                    "request": request,
+                    "transactions": parsed_transactions,
+                    "error": error,
+                    "async_mode": False,
+                    "connections": selection["selector_data"]["connections"],
+                    "categories": selection["selector_data"]["categories"],
+                    "selected_connection_ids": [selected_connection["id"]],
+                    "allow_multiple": False,
+                    "selected_connection": selected_connection,
+                    "selected_tenant": selected_tenant
+                }
+            )
     
+    except Exception as e:
+        logger.error(f"Error in bank-transactions route: {str(e)}", exc_info=True)
+        selector_data = get_connections_for_selector()
+        selected_connection_id = selection["selected_connection"]["id"] if 'selection' in locals() and selection["selected_connection"] else None
+        return templates.TemplateResponse(
+            "bank-transactions.html",
+            {
+                "request": request,
+                "transactions": [],
+                "error": f"Failed to load transactions: {str(e)}",
+                "async_mode": False,
+                "connections": selector_data["connections"],
+                "categories": selector_data["categories"],
+                "selected_connection_ids": [selected_connection_id] if selected_connection_id else [],
+                "allow_multiple": False,
+                "selected_connection": selection["selected_connection"] if 'selection' in locals() and selection["selected_connection"] else None,
+                "selected_tenant": selection["selected_tenant"] if 'selection' in locals() and selection["selected_tenant"] else None
+            }
+        )
+
+
+# Work in Progress Routes
+@app.get("/financial-health/revenue-concentration-risk", response_class=HTMLResponse)
+async def revenue_concentration_risk(request: Request):
+    """Revenue Concentration Risk - Work in Progress."""
     return templates.TemplateResponse(
-        "bank-transactions.html",
+        "work_in_progress.html",
         {
             "request": request,
-            "tenant_name": tenant_name,
-            "transactions": transactions,
-            "error": error
+            "page_title": "Revenue Concentration Risk"
+        }
+    )
+
+
+@app.get("/financial-health/margin-drift", response_class=HTMLResponse)
+async def margin_drift(request: Request):
+    """Margin Drift - Work in Progress."""
+    return templates.TemplateResponse(
+        "work_in_progress.html",
+        {
+            "request": request,
+            "page_title": "Margin Drift"
+        }
+    )
+
+
+@app.get("/cash-flow-advisory/cash-strain", response_class=HTMLResponse)
+async def cash_strain(request: Request):
+    """Cash Strain - Work in Progress."""
+    return templates.TemplateResponse(
+        "work_in_progress.html",
+        {
+            "request": request,
+            "page_title": "Cash Strain"
+        }
+    )
+
+
+@app.get("/profitability/expense-creep", response_class=HTMLResponse)
+async def expense_creep(request: Request):
+    """Expense Creep - Work in Progress."""
+    return templates.TemplateResponse(
+        "work_in_progress.html",
+        {
+            "request": request,
+            "page_title": "Expense Creep"
+        }
+    )
+
+
+@app.get("/profitability/customer-profitability", response_class=HTMLResponse)
+async def customer_profitability(request: Request):
+    """Customer Level Profitability - Work in Progress."""
+    return templates.TemplateResponse(
+        "work_in_progress.html",
+        {
+            "request": request,
+            "page_title": "Customer Level Profitability"
+        }
+    )
+
+
+@app.get("/tax-planning/tax-liability", response_class=HTMLResponse)
+async def tax_liability(request: Request):
+    """Tax Liability - Work in Progress."""
+    return templates.TemplateResponse(
+        "work_in_progress.html",
+        {
+            "request": request,
+            "page_title": "Tax Liability"
+        }
+    )
+
+
+@app.get("/tax-planning/capital-purchase-timing", response_class=HTMLResponse)
+async def capital_purchase_timing(request: Request):
+    """Capital Purchase Timing - Work in Progress."""
+    return templates.TemplateResponse(
+        "work_in_progress.html",
+        {
+            "request": request,
+            "page_title": "Capital Purchase Timing"
         }
     )
 

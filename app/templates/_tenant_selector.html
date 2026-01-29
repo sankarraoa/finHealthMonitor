@@ -1,0 +1,34 @@
+{# Tenant Selector Widget - Shows when connection is Xero and has tenants #}
+{% if selected_connection and selected_connection.software == "xero" and selected_connection.tenants and selected_connection.tenants|length > 0 %}
+<div class="tenant-selector-widget" id="tenant-selector-container" style="margin-left: 10px; display: inline-block;">
+    <select id="tenant-selector" class="tenant-selector" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: white; cursor: pointer;">
+        {% for tenant in selected_connection.tenants %}
+        <option value="{{ tenant.tenant_id }}" {% if selected_tenant and selected_tenant.tenant_id == tenant.tenant_id %}selected{% endif %}>
+            {{ tenant.tenant_name }}
+        </option>
+        {% endfor %}
+    </select>
+</div>
+
+<script>
+    // Initialize tenant selector when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        const tenantSelector = document.getElementById('tenant-selector');
+        if (tenantSelector) {
+            tenantSelector.addEventListener('change', function() {
+                const selectedTenantId = this.value;
+                const url = new URL(window.location.href);
+                
+                if (selectedTenantId) {
+                    url.searchParams.set('tenant_id', selectedTenantId);
+                } else {
+                    url.searchParams.delete('tenant_id');
+                }
+                
+                // Reload page with new tenant selection
+                window.location.href = url.toString();
+            });
+        }
+    });
+</script>
+{% endif %}

@@ -510,6 +510,90 @@ class ConnectionManager:
         
         return False
     
+    def cleanup_duplicate_connections(self) -> int:
+        """
+        Clean up duplicate connections that share the same refresh_token.
+        For each refresh_token group, keeps the oldest connection and merges tenants from others.
+        Then deletes the duplicate connections.
+        
+        Returns:
+            Number of duplicate connections removed
+        """
+        from collections import defaultdict
+        
+        data = self._load_connections()
+        if not data:
+            return 0
+        
+        # Group connections by refresh_token (for Xero connections)
+        refresh_token_groups = defaultdict(list)
+        for conn_id, conn in data.items():
+            if conn.get("software") == "xero":
+                refresh_token = conn.get("refresh_token")
+                if refresh_token:
+                    refresh_token_groups[refresh_token].append((conn_id, conn))
+        
+        deleted_count = 0
+        
+        # Process each group
+        for refresh_token, connections_list in refresh_token_groups.items():
+            if len(connections_list) <= 1:
+                continue  # No duplicates
+            
+            # Sort by created_at (oldest first)
+            connections_list.sort(key=lambda x: x[1].get("created_at", ""))
+            
+            # Keep the oldest connection
+            keep_conn_id, keep_conn = connections_list[0]
+            
+            # Collect all unique tenants from all connections in this group
+            all_tenants = {}
+            for conn_id, conn in connections_list:
+                tenants = conn.get("tenants", [])
+                for tenant in tenants:
+                    tenant_id = tenant.get("tenant_id")
+                    if tenant_id:
+                        # Use the most recent tenant info (prefer non-null xero_connection_id)
+                        if tenant_id not in all_tenants:
+                            all_tenants[tenant_id] = tenant
+                        elif tenant.get("xero_connection_id") and not all_tenants[tenant_id].get("xero_connection_id"):
+                            all_tenants[tenant_id] = tenant
+            
+            # Merge tenants into the kept connection
+            merged_tenants = list(all_tenants.values())
+            
+            # Use the most recent token info (from the most recently updated connection)
+            most_recent_conn = max(connections_list, key=lambda x: x[1].get("updated_at", ""))
+            most_recent_data = most_recent_conn[1]
+            
+            # Update the kept connection with merged data
+            # Update tokens and tenants
+            data[keep_conn_id]["tenants"] = merged_tenants
+            data[keep_conn_id]["access_token"] = most_recent_data.get("access_token")
+            data[keep_conn_id]["refresh_token"] = most_recent_data.get("refresh_token")
+            data[keep_conn_id]["expires_in"] = most_recent_data.get("expires_in", 1800)
+            if most_recent_data.get("token_created_at"):
+                data[keep_conn_id]["token_created_at"] = most_recent_data.get("token_created_at")
+            data[keep_conn_id]["updated_at"] = datetime.now().isoformat()
+            
+            logger.info(f"Merged {len(connections_list)} connections with refresh_token {refresh_token[:20]}... into {keep_conn_id}")
+            logger.info(f"  Kept connection: {keep_conn_id} (created: {keep_conn.get('created_at', 'N/A')})")
+            logger.info(f"  Merged {len(merged_tenants)} unique tenant(s)")
+            
+            # Delete all other connections in this group
+            for conn_id, conn in connections_list[1:]:
+                if conn_id in data:
+                    del data[conn_id]
+                    deleted_count += 1
+                    logger.info(f"  Deleted duplicate: {conn_id}")
+        
+        # Save cleaned data
+        if deleted_count > 0:
+            self._save_connections(data)
+            logger.info(f"Cleanup complete: Removed {deleted_count} duplicate connection(s)")
+        
+        return deleted_count
+    
     def get_all_tenants_for_connection(self, connection_id: str) -> List[Dict[str, Any]]:
         """
         Get all tenants for a connection.

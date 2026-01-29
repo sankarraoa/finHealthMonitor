@@ -1,22 +1,25 @@
 {
-  "f77e47e5-6670-425c-8984-7aa46756ad2c": {
+  "83f2d0af-7c04-41ff-a40c-53e284a2fbec": {
     "category": "finance",
     "software": "xero",
-    "name": "Demo Company (Global)",
-    "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjFDQUY4RTY2NzcyRDZEQzAyOEQ2NzI2RkQwMjYxNTgxNTcwRUZDMTkiLCJ0eXAiOiJKV1QiLCJ4NXQiOiJISy1PWm5jdGJjQW8xbkp2MENZVmdWY09fQmsifQ.eyJuYmYiOjE3Njg5OTEwMDIsImV4cCI6MTc2ODk5MjgwMiwiaXNzIjoiaHR0cHM6Ly9pZGVudGl0eS54ZXJvLmNvbSIsImF1ZCI6Imh0dHBzOi8vaWRlbnRpdHkueGVyby5jb20vcmVzb3VyY2VzIiwiY2xpZW50X2lkIjoiMDNFOUZFOTJCQjE0NENGQ0E5RENCNDg3OTA0QUUwOTgiLCJzdWIiOiJmNzg4OGI0NjM2MjY1Nzk0OWEwZThjYjA2OTgxOGEwNCIsImF1dGhfdGltZSI6MTc2ODk4Nzg1NywieGVyb191c2VyaWQiOiJhZmQ4YTA4Mi1kYjc0LTQ0YTQtYjI1Zi1kYTA0NmM2MjRmNjgiLCJnbG9iYWxfc2Vzc2lvbl9pZCI6Ijc5ZWZmOTg3ODZkNzQ2ODE4Zjc3MDg5NTg4NDNhOTVkIiwic2lkIjoiNzllZmY5ODc4NmQ3NDY4MThmNzcwODk1ODg0M2E5NWQiLCJhdXRoZW50aWNhdGlvbl9ldmVudF9pZCI6IjM4ODYzNDE3LWJhYzAtNDM4Yi04MzcxLWI2MDFiMWU4ZjY1ZiIsImp0aSI6IjU5MzNGMDI1RTUyOENGQTFDQjE5RURFODdEOUI5ODU0Iiwic2NvcGUiOlsiYWNjb3VudGluZy5jb250YWN0cyIsImFjY291bnRpbmcuc2V0dGluZ3MucmVhZCIsImFjY291bnRpbmcucmVwb3J0cy5yZWFkIiwiYWNjb3VudGluZy5hdHRhY2htZW50cyIsImFjY291bnRpbmcuam91cm5hbHMucmVhZCIsImFjY291bnRpbmcudHJhbnNhY3Rpb25zIiwib2ZmbGluZV9hY2Nlc3MiXSwiYW1yIjpbInB3ZCJdfQ.GZ3lmx7lKgj4W_rw3lLBxtxieSyOGWErBPOADFudbxJdKnABFLNY9Tkd2QIN0ZY-0ce3MP80PhHpY9xFGXRG96jpUj26JZvIe7Yho7tyOmQf5qtbBBkGh9X_BOso1ZYhr_BN4y8yncPPbgghQzwErf7aUV2oNaC5eJcnd-q2OdIzA1XmOVfMd3CrsPw3gwmP-fo9DbZGhKWYPNjZ7rbtsQPKRnj-Boibhb46YNg4Hlm4a9Gqw16UKpOhtM0cR88FTawUhynXKoYJRR6HGlwEJrLYpliAetAflgT2aO-3iqNjjB1wZqxj1AfP85_lbgeICuyLb_-rZ3Xwd32n2zNIfA",
-    "refresh_token": "6uWLbJsK2P5HguA7Eid1LMYSQgdAcQ_hwNqv0iBHDHg",
+    "name": "Xero1",
+    "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjFDQUY4RTY2NzcyRDZEQzAyOEQ2NzI2RkQwMjYxNTgxNTcwRUZDMTkiLCJ0eXAiOiJKV1QiLCJ4NXQiOiJISy1PWm5jdGJjQW8xbkp2MENZVmdWY09fQmsifQ.eyJuYmYiOjE3Njk3MDI1MjQsImV4cCI6MTc2OTcwNDMyNCwiaXNzIjoiaHR0cHM6Ly9pZGVudGl0eS54ZXJvLmNvbSIsImF1ZCI6Imh0dHBzOi8vaWRlbnRpdHkueGVyby5jb20vcmVzb3VyY2VzIiwiY2xpZW50X2lkIjoiMDNFOUZFOTJCQjE0NENGQ0E5RENCNDg3OTA0QUUwOTgiLCJzdWIiOiJmNzg4OGI0NjM2MjY1Nzk0OWEwZThjYjA2OTgxOGEwNCIsImF1dGhfdGltZSI6MTc2OTcwMTg5NSwieGVyb191c2VyaWQiOiJhZmQ4YTA4Mi1kYjc0LTQ0YTQtYjI1Zi1kYTA0NmM2MjRmNjgiLCJnbG9iYWxfc2Vzc2lvbl9pZCI6ImFjNGQ0YWM1NTVhNDQxODE5YzdiZGRkZGNkNTI0MmFhIiwic2lkIjoiYWM0ZDRhYzU1NWE0NDE4MTljN2JkZGRkY2Q1MjQyYWEiLCJhdXRoZW50aWNhdGlvbl9ldmVudF9pZCI6ImRiMmU3N2FmLWJiM2QtNGFkOS05MDk5LWFlZGVlZTU0M2UxZCIsImp0aSI6IjUwQzg1NUVEMjFGNkM3NTY1OEYxQUI4QzFDNjEzMDg0Iiwic2NvcGUiOlsiYWNjb3VudGluZy5jb250YWN0cyIsImFjY291bnRpbmcuc2V0dGluZ3MucmVhZCIsImFjY291bnRpbmcucmVwb3J0cy5yZWFkIiwiYWNjb3VudGluZy5hdHRhY2htZW50cyIsImFjY291bnRpbmcuam91cm5hbHMucmVhZCIsImFjY291bnRpbmcudHJhbnNhY3Rpb25zIiwib2ZmbGluZV9hY2Nlc3MiXSwiYW1yIjpbInB3ZCJdfQ.tRGgRmCZQNJtD4cgQdOORT5EiCOS_8qABZutHYLCj43glNzfoci4oBweRQyP3rj6duEmNMC5_xocz3aI8favjCtaEVomKQxw9I0pP5sQifig4R1y8KUfITCQI-KSVPIBOR0-y47quQXWEvZb_S7q8fATKmQqTMwxP35k3Y9dTyWPjPlG49ljEgZUJxveV_oiEEPFiCKu3T1SHj8oEYhiAmMP4f3TWJGnR7LalPsA2ccvbPhQmJksoedNDIsPr7u65HhZnqKyXsY2v_K_VCuDDAVvCZJ4eXLUenwtJrGMYUPQa-cI9XXTWMDJOXbZSrw3ZHHzkhLm3BKlW7X4AZvCXw",
+    "refresh_token": "OyFS5e_HnrLzShOVb5b2Jczkl1yZ0zKUvY_f8ukhl8U",
     "expires_in": 1800,
-    "token_created_at": "2026-01-21T15:53:28.531515",
-    "created_at": "2026-01-21T15:53:28.531534",
-    "updated_at": "2026-01-21T15:53:29.409639",
-    "metadata": {
-      "migrated_from_session": true
-    },
+    "token_created_at": "2026-01-29T21:32:05.531935",
+    "created_at": "2026-01-29T21:32:05.531950",
+    "updated_at": "2026-01-29T21:32:05.531953",
+    "metadata": {},
     "tenants": [
       {
         "tenant_id": "64e3d732-b8bc-4144-bfaa-633f0b404695",
         "tenant_name": "Demo Company (Global)",
         "xero_connection_id": "7bf67481-c1f5-43cd-b584-90e0081dd6cf"
+      },
+      {
+        "tenant_id": "b7664215-16e2-4b7a-b073-1640f5c137a5",
+        "tenant_name": "getGo",
+        "xero_connection_id": "0c711f5d-cec9-4c05-8576-1c5d386b80d3"
       }
     ]
   }

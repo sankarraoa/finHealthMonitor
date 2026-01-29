@@ -1,41 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Outstanding Invoices - FinHealthMonitor</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="container">
-        <header class="header">
-            <h1>FinHealthMonitor</h1>
-            <div class="header-actions">
-                <span class="tenant-name">Organization: {{ tenant_name }}</span>
-                <div class="dropdown">
-                    <button class="dropbtn">Menu ▼</button>
-                    <div class="dropdown-content">
-                        <a href="/">Home</a>
-                        <a href="/settings">Settings</a>
-                        <a href="/payroll-risk">Payroll Risk</a>
-                        <a href="/accounts">Chart of Account</a>
-                        <a href="/invoices" class="active">Outstanding Invoices</a>
-                        <a href="/manual-journals">Manual Journals</a>
-                        <a href="/bank-transactions">Bank Transactions</a>
-                    </div>
+{% extends "base.html" %}
+
+{% block title %}Outstanding Invoices - FinHealthMonitor{% endblock %}
+
+{% block content %}
+<div class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Outstanding Invoices</h2>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    {% include "_connection_selector.html" %}
+                    {% if selected_connection and selected_connection.software == "xero" %}
+                        {% include "_tenant_selector.html" %}
+                    {% endif %}
                 </div>
-                <a href="/logout" class="btn btn-secondary">Logout</a>
             </div>
-        </header>
-
-        {% if error %}
-        <div class="error-message">
-            <strong>Error:</strong> {{ error }}
-        </div>
-        {% endif %}
-
-        <div class="content-section">
-            <h2>Outstanding Invoices</h2>
             
             {% if async_mode and not invoices %}
             <!-- Loading State with Progress -->
@@ -168,9 +145,5 @@
             {% endif %}
             {% endif %}
         </div>
-    </div>
-
-    <script src="/static/js/main.js"></script>
-</body>
-</html>
+{% endblock %}
 

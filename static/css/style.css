@@ -84,6 +84,12 @@ body {
     gap: 20px;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
 .tenant-name {
     color: #666;
     font-size: 0.9em;
@@ -149,8 +155,21 @@ body {
     box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
     z-index: 1000;
     border-radius: 6px;
-    overflow: hidden;
-    margin-top: 5px;
+    overflow: visible;
+    top: 100%;
+    left: 0;
+    margin-top: 0;
+}
+
+/* Create a hoverable bridge area to prevent gap */
+.dropdown-content::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 0;
+    right: 0;
+    height: 8px;
+    background: transparent;
 }
 
 .dropdown-content a {
@@ -395,5 +414,229 @@ body {
 #charts-section,
 #chatbot-section {
     margin-top: 20px;
+}
+
+/* Connection Selector Component */
+.connection-selector-widget {
+    position: relative;
+    display: inline-block;
+}
+
+.connection-selector-trigger {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.9em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 150px;
+    transition: all 0.3s ease;
+}
+
+.connection-selector-trigger:hover {
+    border-color: #667eea;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.1);
+}
+
+.connection-selector-trigger .selected-count {
+    background: #667eea;
+    color: white;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 0.85em;
+    font-weight: 600;
+    min-width: 20px;
+    text-align: center;
+}
+
+.connection-selector-trigger .trigger-text {
+    flex: 1;
+    text-align: left;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.connection-selector-trigger .trigger-icon {
+    color: #667eea;
+    font-size: 0.8em;
+    transition: transform 0.3s ease;
+}
+
+.connection-selector-trigger.open .trigger-icon {
+    transform: rotate(180deg);
+}
+
+.connection-selector-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 350px;
+    max-width: 500px;
+    max-height: 500px;
+    overflow-y: auto;
+    z-index: 1000;
+    padding: 15px;
+}
+
+.connection-selector-panel.show {
+    display: block;
+}
+
+.connection-selector-panel::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    right: 20px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-bottom: 8px solid white;
+}
+
+.connection-selector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.connection-selector-header h4 {
+    margin: 0;
+    font-size: 1em;
+    color: #333;
+}
+
+.connection-selector-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.connection-selector-actions button {
+    padding: 4px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.connection-selector-actions .btn-clear {
+    background: #f8f9fa;
+    color: #666;
+}
+
+.connection-selector-actions .btn-clear:hover {
+    background: #e9ecef;
+}
+
+.connection-selector-actions .btn-apply {
+    background: #667eea;
+    color: white;
+}
+
+.connection-selector-actions .btn-apply:hover {
+    background: #5568d3;
+}
+
+.connection-category-group {
+    margin-bottom: 20px;
+}
+
+.connection-category-title {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #667eea;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.connection-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    margin-bottom: 5px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.connection-item:hover {
+    background: #f8f9fa;
+}
+
+.connection-item input[type="checkbox"] {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+    accent-color: #667eea;
+}
+
+.connection-item-label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.connection-item-icon {
+    font-size: 1.1em;
+}
+
+.connection-item-name {
+    font-size: 0.9em;
+    color: #333;
+    flex: 1;
+}
+
+.connection-item-tenant {
+    font-size: 0.8em;
+    color: #666;
+    font-style: italic;
+}
+
+.connection-selected-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.connection-badge {
+    background: #667eea;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.connection-badge .badge-remove {
+    cursor: pointer;
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.connection-badge .badge-remove:hover {
+    opacity: 1;
 }
 

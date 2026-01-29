@@ -1,0 +1,37 @@
+{# Connection Selector Dropdown - Simple dropdown showing connection names #}
+{% if connections and connections|length > 0 %}
+<div class="connection-selector-widget" id="connection-selector-container" style="display: inline-block;">
+    <select id="connection-selector" class="connection-selector" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: white; cursor: pointer;">
+        {% for connection in connections %}
+        <option value="{{ connection.id }}" {% if selected_connection and selected_connection.id == connection.id %}selected{% endif %}>
+            {{ connection.name }}
+        </option>
+        {% endfor %}
+    </select>
+</div>
+
+<script>
+    // Initialize connection selector when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        const connectionSelector = document.getElementById('connection-selector');
+        if (connectionSelector) {
+            connectionSelector.addEventListener('change', function() {
+                const selectedConnectionId = this.value;
+                const url = new URL(window.location.href);
+                
+                if (selectedConnectionId) {
+                    url.searchParams.set('connection_id', selectedConnectionId);
+                } else {
+                    url.searchParams.delete('connection_id');
+                }
+                
+                // Clear tenant_id when connection changes (will be set by tenant selector if applicable)
+                url.searchParams.delete('tenant_id');
+                
+                // Reload page with new connection selection
+                window.location.href = url.toString();
+            });
+        }
+    });
+</script>
+{% endif %}

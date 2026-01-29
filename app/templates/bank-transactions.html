@@ -1,39 +1,114 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bank Transactions - FinHealthMonitor</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="container">
-        <header class="header">
-            <h1>FinHealthMonitor</h1>
-            <div class="header-actions">
-                {% if tenant_name %}
-                <span class="tenant-name">Organization: {{ tenant_name }}</span>
-                {% endif %}
-                <div class="dropdown">
-                    <button class="dropbtn">Menu ▼</button>
-                    <div class="dropdown-content">
-                        <a href="/home">Home</a>
-                        <a href="/settings">Settings</a>
-                        <a href="/payroll-risk">Payroll Risk</a>
-                        <a href="/accounts">Chart of Account</a>
-                        <a href="/invoices">Outstanding Invoices</a>
-                        <a href="/manual-journals">Manual Journals</a>
-                        <a href="/bank-transactions">Bank Transactions</a>
-                    </div>
-                </div>
-                {% if tenant_name %}
-                <a href="/logout" class="btn btn-secondary">Logout</a>
-                {% endif %}
-            </div>
-        </header>
+{% extends "base.html" %}
 
-        <div class="content-section">
-            <h2>Bank Transactions (Bank Feeds)</h2>
+{% block title %}Bank Transactions - FinHealthMonitor{% endblock %}
+
+{% block extra_css %}
+<style>
+        .transaction-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+        .transaction-table thead {
+            background: #f8f9fa;
+        }
+        .transaction-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .transaction-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .transaction-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+        .expand-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.3s ease;
+        }
+        .expand-btn:hover {
+            background: #5568d3;
+        }
+        .transaction-details {
+            display: none;
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        .transaction-details.show {
+            display: block;
+        }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .items-table th {
+            background: #e9ecef;
+            padding: 8px;
+            text-align: left;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        .items-table td {
+            padding: 8px;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 0.9em;
+        }
+        .amount-positive {
+            color: #28a745;
+            font-weight: 600;
+        }
+        .amount-negative {
+            color: #dc3545;
+            font-weight: 600;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .status-reconciled {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-unreconciled {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-voided {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Bank Transactions (Bank Feeds)</h2>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    {% include "_connection_selector.html" %}
+                    {% if selected_connection and selected_connection.software == "xero" %}
+                        {% include "_tenant_selector.html" %}
+                    {% endif %}
+                </div>
+            </div>
             
             {% if error %}
             <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
@@ -41,15 +116,144 @@
             </div>
             {% endif %}
 
-            {% if transactions %}
-            <div style="margin-top: 20px;">
-                {% for item in transactions %}
-                    {% if item.type == "text" %}
-                    <div style="background: #f8f9fa; border-left: 4px solid #28a745; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
-                        <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9em; margin: 0;">{{ item.text }}</pre>
+            {% if async_mode and not transactions %}
+            <!-- Loading State with Progress -->
+            <div id="loading-indicator" style="margin-top: 30px; text-align: center; padding: 40px;">
+                <div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+                <h3 style="color: #667eea; margin-bottom: 10px;">Fetching Bank Transactions from Xero</h3>
+                <p id="progress-message" style="color: #666; margin-bottom: 20px;">Initializing...</p>
+                <div style="width: 100%; max-width: 500px; margin: 0 auto; background: #e9ecef; border-radius: 10px; height: 30px; overflow: hidden; position: relative;">
+                    <div id="progress-bar" style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
+                        <span id="progress-percentage" style="color: white; font-weight: 600; font-size: 0.9em;">0%</span>
                     </div>
-                    {% endif %}
-                {% endfor %}
+                </div>
+                <p style="color: #999; font-size: 0.9em; margin-top: 15px;">Please wait...</p>
+            </div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+            <script>
+                (function() {
+                    const sessionId = "{{ session_id }}";
+                    let pollInterval;
+                    let pollCount = 0;
+                    const maxPolls = 300;
+                    
+                    function updateProgress(progress, message) {
+                        const progressBar = document.getElementById('progress-bar');
+                        const progressPercentage = document.getElementById('progress-percentage');
+                        const progressMessage = document.getElementById('progress-message');
+                        
+                        if (progressBar) progressBar.style.width = progress + '%';
+                        if (progressPercentage) progressPercentage.textContent = progress + '%';
+                        if (progressMessage) progressMessage.textContent = message;
+                    }
+                    
+                    function pollProgress() {
+                        pollCount++;
+                        if (pollCount > maxPolls) {
+                            clearInterval(pollInterval);
+                            updateProgress(0, 'Request timed out. Please refresh the page.');
+                            return;
+                        }
+                        
+                        fetch('/bank-transactions/progress')
+                            .then(response => response.json())
+                            .then(data => {
+                                updateProgress(data.progress || 0, data.message || 'Loading...');
+                                
+                                if (data.status === 'complete') {
+                                    clearInterval(pollInterval);
+                                    setTimeout(() => window.location.reload(), 500);
+                                } else if (data.status === 'error') {
+                                    clearInterval(pollInterval);
+                                    updateProgress(0, 'Error: ' + (data.error || 'Unknown error'));
+                                    setTimeout(() => window.location.href = '/bank-transactions?async=false', 2000);
+                                }
+                            })
+                            .catch(error => console.error('Error polling progress:', error));
+                    }
+                    
+                    pollProgress();
+                    pollInterval = setInterval(pollProgress, 1000);
+                })();
+            </script>
+            {% elif transactions %}
+            <div class="table-container">
+                <table class="transaction-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Contact</th>
+                            <th>Reference</th>
+                            <th>Total Amount</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transaction in transactions %}
+                        <tr>
+                            <td>{{ transaction.date or 'N/A' }}</td>
+                            <td>{{ transaction.type or 'N/A' }}</td>
+                            <td>{{ transaction.contact or 'N/A' }}</td>
+                            <td>{{ transaction.reference or 'N/A' }}</td>
+                            <td>
+                                <span class="{% if transaction.total >= 0 %}amount-positive{% else %}amount-negative{% endif %}">
+                                    ${{ "%.2f"|format(transaction.total) }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="status-badge status-{{ transaction.status|lower|replace(' ', '-') }}">
+                                    {{ transaction.status or 'N/A' }}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="expand-btn" onclick="toggleDetails(this, 'transaction-{{ loop.index }}')">
+                                    <span class="expand-text">Show Details</span>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="7" style="padding: 0;">
+                                <div id="transaction-{{ loop.index }}" class="transaction-details">
+                                    <h4 style="margin-top: 0; color: #667eea;">Transaction Details</h4>
+                                    <p><strong>Transaction ID:</strong> {{ transaction.id or 'N/A' }}</p>
+                                    {% if transaction.line_items %}
+                                    <h5 style="margin-top: 15px; margin-bottom: 10px;">Line Items:</h5>
+                                    <table class="items-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Description</th>
+                                                <th>Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in transaction.line_items %}
+                                            <tr>
+                                                <td>{{ item.description or 'N/A' }}</td>
+                                                <td>
+                                                    <span class="{% if item.amount >= 0 %}amount-positive{% else %}amount-negative{% endif %}">
+                                                        ${{ "%.2f"|format(item.amount) }}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                    {% else %}
+                                    <p style="color: #6c757d; font-style: italic;">No line items available</p>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
             {% else %}
             <div style="background: #e9ecef; padding: 20px; border-radius: 6px; text-align: center; color: #6c757d;">
@@ -64,6 +268,23 @@
         </div>
     </div>
 
-    <script src="/static/js/main.js"></script>
-</body>
-</html>
+    <script>
+        function toggleDetails(button, id) {
+            const details = document.getElementById(id);
+            if (!details) {
+                console.error('Details element not found:', id);
+                return;
+            }
+            
+            const text = button.querySelector('.expand-text');
+            
+            if (details.classList.contains('show')) {
+                details.classList.remove('show');
+                if (text) text.textContent = 'Show Details';
+            } else {
+                details.classList.add('show');
+                if (text) text.textContent = 'Hide Details';
+            }
+        }
+    </script>
+{% endblock %}

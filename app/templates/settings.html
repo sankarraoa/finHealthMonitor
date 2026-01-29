@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings - FinHealthMonitor</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script>
+{% extends "base.html" %}
+
+{% block title %}Connections - FinHealthMonitor{% endblock %}
+
+{% block extra_js %}
+<script>
         // CRITICAL: Test that script is executing
         console.log('HEAD SCRIPT: Script is executing...');
         
@@ -309,42 +307,24 @@
             color: #6c757d;
         }
     </style>
-</head>
-<body>
-    <div class="container">
-        <header class="header">
-            <h1>FinHealthMonitor</h1>
-            <div class="header-actions">
-                <div class="dropdown">
-                    <button class="dropbtn">Menu ▼</button>
-                    <div class="dropdown-content">
-                        <a href="/home">Home</a>
-                        <a href="/settings" class="active">Settings</a>
-                        <a href="/payroll-risk">Payroll Risk</a>
-                        <a href="/accounts">Chart of Account</a>
-                        <a href="/invoices">Outstanding Invoices</a>
-                        <a href="/manual-journals">Manual Journals</a>
-                        <a href="/bank-transactions">Bank Transactions</a>
-                    </div>
-                </div>
-            </div>
-        </header>
+{% endblock %}
 
-        {% if error %}
-        <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-            <strong>Error:</strong> {{ error }}
-        </div>
-        {% endif %}
+{% block content %}
+<div class="content-section">
+    {% if error %}
+    <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
 
-        {% if success %}
-        <div class="success-message" style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-            <strong>Success:</strong> {{ success }}
-        </div>
-        {% endif %}
+    {% if success %}
+    <div class="success-message" style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+        <strong>Success:</strong> {{ success }}
+    </div>
+    {% endif %}
 
-        <div class="content-section">
-            <h2>Settings</h2>
-            <p>Manage your integrations and connections.</p>
+    <h2>Connections</h2>
+    <p>Manage your integrations and connections.</p>
 
             {% for category_key, category_info in categories.items() %}
             <div class="category-section">
@@ -466,7 +446,6 @@
             </div>
             {% endfor %}
         </div>
-    </div>
 
     <!-- Hidden element to store software options (avoids JavaScript syntax issues) -->
     <div id="software-options-data" data-options='{{ software_options|tojson }}' style="display: none;"></div>
@@ -705,5 +684,4 @@
         });
         
     </script>
-</body>
-</html>
+{% endblock %}
