@@ -303,6 +303,7 @@ async def _run_payroll_risk_async(
         # Create agent with progress callback
         agent = PayrollRiskAgent(
             bearer_token=access_token,
+            tenant_id=tenant_id,
             llm_model=llm_model,
             progress_callback=update_progress
         )
@@ -319,9 +320,9 @@ async def _run_payroll_risk_async(
         # Store in database
         payroll_risk_db.complete_analysis(analysis_id, result_dict)
         
-        # Mark as complete in memory
+        # Mark as complete in memory (use "completed" to match database)
         _payroll_risk_progress[progress_key] = {
-            "status": "complete",
+            "status": "completed",
             "progress": 100,
             "message": "✅ Analysis complete!",
             "data": result_dict,
@@ -336,9 +337,9 @@ async def _run_payroll_risk_async(
         # Store error in database
         payroll_risk_db.fail_analysis(analysis_id, str(e))
         
-        # Mark as error in memory
+        # Mark as error in memory (use "failed" to match database)
         _payroll_risk_progress[progress_key] = {
-            "status": "error",
+            "status": "failed",
             "progress": 0,
             "message": "Error occurred",
             "data": None,
@@ -536,7 +537,8 @@ async def accounts(request: Request, connection_id: Optional[str] = None):
             )
         
         # Check if async mode is requested
-        async_param = request.query_params.get("async", "true")
+        # Default to synchronous mode for better reliability
+        async_param = request.query_params.get("async", "false")
         use_async = async_param.lower() == "true"
         
         if use_async:
@@ -653,7 +655,7 @@ async def accounts(request: Request, connection_id: Optional[str] = None):
         )
 
 
-async def _fetch_invoices_async(session_id: str, access_token: str):
+async def _fetch_invoices_async(session_id: str, access_token: str, tenant_id: Optional[str] = None):
     """Background task to fetch invoices with progress tracking."""
     progress_key = f"invoice_progress_{session_id}"
     
@@ -675,9 +677,9 @@ async def _fetch_invoices_async(session_id: str, access_token: str):
         
         mcp_client = None
         try:
-            # Create MCP client with bearer token
+            # Create MCP client with bearer token and tenant_id
             update_progress(5, "Connecting to Xero...")
-            mcp_client = XeroMCPClient(bearer_token=access_token)
+            mcp_client = XeroMCPClient(bearer_token=access_token, tenant_id=tenant_id)
             
             # Fetch outstanding invoices via MCP with timeout
             update_progress(10, "Fetching invoices from Xero...")
@@ -690,12 +692,22 @@ async def _fetch_invoices_async(session_id: str, access_token: str):
             await mcp_client.close()
             mcp_client = None
             
+            # Handle empty or None response
+            if invoices_list is None:
+                logger.warning("MCP server returned None for invoices, treating as empty list")
+                invoices_list = []
+            elif not isinstance(invoices_list, list):
+                logger.warning(f"MCP server returned unexpected type {type(invoices_list)} for invoices, treating as empty list")
+                invoices_list = []
+            
             # Calculate totals
             update_progress(99, "Calculating totals...")
             total_outstanding = sum(
                 float(inv.get("AmountDue", 0) or 0) 
                 for inv in invoices_list
             )
+            
+            logger.info(f"Fetched {len(invoices_list)} invoices with total outstanding: ${total_outstanding:.2f}")
             
             # Mark as complete
             _invoice_progress[progress_key] = {
@@ -769,9 +781,9 @@ async def invoices(request: Request, async_mode: bool = False):
         tenant_id = selection["tenant_id"]
         tenant_name = selection["tenant_name"]
         
-        # Check if async mode is requested or if we should use it by default
-        # Default to async mode unless explicitly disabled
-        async_param = request.query_params.get("async", "true")
+        # Check if async mode is requested
+        # Default to synchronous mode for better reliability
+        async_param = request.query_params.get("async", "false")
         use_async = async_mode if async_mode else (async_param.lower() == "true")
         
         if use_async:
@@ -830,7 +842,7 @@ async def invoices(request: Request, async_mode: bool = False):
             # Start background task if not already running
             if progress_key not in _invoice_progress or _invoice_progress[progress_key]["status"] != "loading":
                 # Start background task
-                asyncio.create_task(_fetch_invoices_async(session_id, access_token))
+                asyncio.create_task(_fetch_invoices_async(session_id, access_token, tenant_id))
             
             # Return loading page
             return templates.TemplateResponse(
@@ -856,9 +868,9 @@ async def invoices(request: Request, async_mode: bool = False):
             
             mcp_client = None
             try:
-                # Create MCP client with bearer token
+                # Create MCP client with bearer token and tenant_id
                 logger.info("Initializing MCP client...")
-                mcp_client = XeroMCPClient(bearer_token=access_token)
+                mcp_client = XeroMCPClient(bearer_token=access_token, tenant_id=tenant_id)
                 logger.info(f"MCP client created, server path: {mcp_client.mcp_server_path}")
                 
                 # Fetch outstanding invoices via MCP with timeout
@@ -868,6 +880,15 @@ async def invoices(request: Request, async_mode: bool = False):
                         mcp_client.get_outstanding_invoices(),
                         timeout=30.0  # 30 second timeout
                     )
+                    
+                    # Handle empty or None response
+                    if invoices_list is None:
+                        logger.warning("MCP server returned None for invoices, treating as empty list")
+                        invoices_list = []
+                    elif not isinstance(invoices_list, list):
+                        logger.warning(f"MCP server returned unexpected type {type(invoices_list)} for invoices, treating as empty list")
+                        invoices_list = []
+                    
                     logger.info(f"Successfully fetched {len(invoices_list)} invoices from MCP server")
                 except asyncio.TimeoutError:
                     logger.error("MCP server request timed out after 30 seconds")
@@ -969,19 +990,34 @@ async def invoices_progress(request: Request):
     progress_key = f"invoice_progress_{session_id}"
     
     if progress_key not in _invoice_progress:
+        # If no progress data exists, return "complete" to stop polling
+        # This happens when synchronous mode was used or data was already loaded
         return JSONResponse({
-            "status": "not_started",
-            "progress": 0,
-            "message": "Not started"
+            "status": "complete",
+            "progress": 100,
+            "message": "Complete"
         })
     
     progress_data = _invoice_progress[progress_key]
-    return JSONResponse({
-        "status": progress_data["status"],
+    status = progress_data["status"]
+    
+    response_data = {
+        "status": status,
         "progress": progress_data["progress"],
         "message": progress_data["message"],
         "error": progress_data.get("error")
-    })
+    }
+    
+    # Clean up completed or errored progress data after returning response
+    # This prevents memory leaks and stops unnecessary polling
+    if status in ["complete", "error"]:
+        # Clean up immediately after first completion response
+        # The JavaScript will reload the page, so we don't need to keep the data
+        if progress_key in _invoice_progress:
+            del _invoice_progress[progress_key]
+            logger.debug(f"Cleaned up progress data for session {session_id} (status: {status})")
+    
+    return JSONResponse(response_data)
 
 
 async def _fetch_accounts_async(session_id: str, access_token: str, tenant_id: str):
@@ -1049,26 +1085,37 @@ async def _fetch_journals_async(session_id: str, access_token: str, tenant_id: s
                 _journal_progress[progress_key]["message"] = message
         
         update_progress(10, "Connecting to Xero...")
-        mcp_client = XeroMCPClient(bearer_token=access_token)
+        mcp_client = XeroMCPClient(bearer_token=access_token, tenant_id=tenant_id)
         
         update_progress(30, "Fetching manual journals...")
         result = await mcp_client.call_tool("list-manual-journals", {})
         
         parsed_journals = []
-        if isinstance(result, dict) and "content" in result:
-            update_progress(50, "Processing journals...")
-            journals = await _process_manual_journals_content(
-                result["content"], 
-                mcp_client,
-                access_token=access_token,
-                tenant_id=tenant_id
-            )
-            
-            update_progress(80, "Parsing journal data...")
-            for item in journals:
-                if item.get("type") == "text":
-                    parsed_journal = _parse_manual_journal_text(item.get("text", ""))
-                    parsed_journals.append(parsed_journal)
+        if result is None:
+            logger.warning("MCP server returned None for manual journals")
+        elif isinstance(result, dict) and "content" in result:
+            content = result["content"]
+            if not content:
+                logger.info("MCP server returned empty content for manual journals")
+            else:
+                update_progress(50, "Processing journals...")
+                journals = await _process_manual_journals_content(
+                    content, 
+                    mcp_client,
+                    access_token=access_token,
+                    tenant_id=tenant_id
+                )
+                
+                update_progress(80, "Parsing journal data...")
+                for item in journals:
+                    if item.get("type") == "text":
+                        parsed_journal = _parse_manual_journal_text(item.get("text", ""))
+                        if parsed_journal:  # Only add if parsing succeeded
+                            parsed_journals.append(parsed_journal)
+        else:
+            logger.warning(f"MCP server returned unexpected result type {type(result)} for manual journals")
+        
+        logger.info(f"Parsed {len(parsed_journals)} manual journals from MCP response")
         
         await mcp_client.close()
         mcp_client = None
@@ -1097,7 +1144,7 @@ async def _fetch_journals_async(session_id: str, access_token: str, tenant_id: s
         }
 
 
-async def _fetch_transactions_async(session_id: str, access_token: str):
+async def _fetch_transactions_async(session_id: str, access_token: str, tenant_id: Optional[str] = None):
     """Background task to fetch bank transactions with progress tracking."""
     progress_key = f"transaction_progress_{session_id}"
     mcp_client = None
@@ -1117,21 +1164,30 @@ async def _fetch_transactions_async(session_id: str, access_token: str):
                 _transaction_progress[progress_key]["message"] = message
         
         update_progress(10, "Connecting to Xero...")
-        mcp_client = XeroMCPClient(bearer_token=access_token)
+        mcp_client = XeroMCPClient(bearer_token=access_token, tenant_id=tenant_id)
         
         update_progress(30, "Fetching bank transactions...")
         result = await mcp_client.call_tool("list-bank-transactions", {"page": 1})
         
         parsed_transactions = []
-        if isinstance(result, dict) and "content" in result:
-            update_progress(60, "Processing transactions...")
+        if result is None:
+            logger.warning("MCP server returned None for bank transactions")
+        elif isinstance(result, dict) and "content" in result:
             transactions = result["content"]
-            
-            update_progress(80, "Parsing transaction data...")
-            for item in transactions:
-                if item.get("type") == "text":
-                    parsed_transaction = _parse_bank_transaction_text(item.get("text", ""))
-                    parsed_transactions.append(parsed_transaction)
+            if not transactions:
+                logger.info("MCP server returned empty content for bank transactions")
+            else:
+                update_progress(60, "Processing transactions...")
+                update_progress(80, "Parsing transaction data...")
+                for item in transactions:
+                    if item.get("type") == "text":
+                        parsed_transaction = _parse_bank_transaction_text(item.get("text", ""))
+                        if parsed_transaction:  # Only add if parsing succeeded
+                            parsed_transactions.append(parsed_transaction)
+        else:
+            logger.warning(f"MCP server returned unexpected result type {type(result)} for bank transactions")
+        
+        logger.info(f"Parsed {len(parsed_transactions)} bank transactions from MCP response")
         
         await mcp_client.close()
         mcp_client = None
@@ -1195,19 +1251,30 @@ async def journals_progress(request: Request):
     progress_key = f"journal_progress_{session_id}"
     
     if progress_key not in _journal_progress:
+        # If no progress data exists, return "complete" to stop polling
         return JSONResponse({
-            "status": "not_started",
-            "progress": 0,
-            "message": "Not started"
+            "status": "complete",
+            "progress": 100,
+            "message": "Complete"
         })
     
     progress_data = _journal_progress[progress_key]
-    return JSONResponse({
-        "status": progress_data["status"],
+    status = progress_data["status"]
+    
+    response_data = {
+        "status": status,
         "progress": progress_data["progress"],
         "message": progress_data["message"],
         "error": progress_data.get("error")
-    })
+    }
+    
+    # Clean up completed or errored progress data
+    if status in ["complete", "error"]:
+        if progress_key in _journal_progress:
+            del _journal_progress[progress_key]
+            logger.debug(f"Cleaned up journal progress data for session {session_id} (status: {status})")
+    
+    return JSONResponse(response_data)
 
 
 @app.get("/bank-transactions/progress")
@@ -1220,19 +1287,30 @@ async def transactions_progress(request: Request):
     progress_key = f"transaction_progress_{session_id}"
     
     if progress_key not in _transaction_progress:
+        # If no progress data exists, return "complete" to stop polling
         return JSONResponse({
-            "status": "not_started",
-            "progress": 0,
-            "message": "Not started"
+            "status": "complete",
+            "progress": 100,
+            "message": "Complete"
         })
     
     progress_data = _transaction_progress[progress_key]
-    return JSONResponse({
-        "status": progress_data["status"],
+    status = progress_data["status"]
+    
+    response_data = {
+        "status": status,
         "progress": progress_data["progress"],
         "message": progress_data["message"],
         "error": progress_data.get("error")
-    })
+    }
+    
+    # Clean up completed or errored progress data
+    if status in ["complete", "error"]:
+        if progress_key in _transaction_progress:
+            del _transaction_progress[progress_key]
+            logger.debug(f"Cleaned up transaction progress data for session {session_id} (status: {status})")
+    
+    return JSONResponse(response_data)
 
 
 @app.get("/home", response_class=HTMLResponse)
@@ -2836,24 +2914,66 @@ async def start_payroll_risk_analysis(request: Request):
 async def payroll_risk_progress(request: Request, analysis_id: str):
     """Get progress for a specific analysis."""
     try:
-        # Check in-memory progress first
+        # Always check database first (source of truth)
+        analysis = payroll_risk_db.get_analysis(analysis_id)
+        if not analysis:
+            return JSONResponse({"error": "Analysis not found"}, status_code=404)
+        
+        # Normalize status to lowercase
+        db_status = analysis["status"].lower() if analysis.get("status") else "unknown"
+        
+        # If database says completed or failed, return that (don't check in-memory)
+        if db_status in ["completed", "failed"]:
+            return JSONResponse({
+                "status": db_status,
+                "progress": analysis.get("progress", 100 if db_status == "completed" else 0),
+                "message": analysis.get("progress_message", "Analysis complete" if db_status == "completed" else "Analysis failed"),
+                "error": analysis.get("error_message")
+            })
+        
+        # For running status, check in-memory for real-time updates
         progress_key = f"payroll_risk_progress_{analysis_id}"
         if progress_key in _payroll_risk_progress:
             progress_data = _payroll_risk_progress[progress_key]
+            # Normalize status
+            mem_status = progress_data["status"].lower() if progress_data.get("status") else "running"
+            
+            # If in-memory says completed but DB doesn't, update DB
+            if mem_status in ["completed", "complete"] and db_status == "running":
+                if progress_data.get("data"):
+                    payroll_risk_db.complete_analysis(analysis_id, progress_data["data"])
+                    # Refresh from DB after update and return DB status
+                    analysis = payroll_risk_db.get_analysis(analysis_id)
+                    if analysis:
+                        return JSONResponse({
+                            "status": analysis["status"].lower(),
+                            "progress": 100,
+                            "message": analysis.get("progress_message", "Analysis complete"),
+                            "error": None
+                        })
+                elif progress_data.get("error"):
+                    payroll_risk_db.fail_analysis(analysis_id, progress_data["error"])
+                    # Refresh from DB after update and return DB status
+                    analysis = payroll_risk_db.get_analysis(analysis_id)
+                    if analysis:
+                        return JSONResponse({
+                            "status": analysis["status"].lower(),
+                            "progress": 0,
+                            "message": analysis.get("progress_message", "Analysis failed"),
+                            "error": analysis.get("error_message")
+                        })
+            
+            # Return in-memory status for running analyses
             return JSONResponse({
-                "status": progress_data["status"],
+                "status": mem_status,
                 "progress": progress_data["progress"],
                 "message": progress_data["message"],
                 "error": progress_data.get("error")
             })
         
-        # Fall back to database
-        analysis = payroll_risk_db.get_analysis(analysis_id)
-        if not analysis:
-            return JSONResponse({"error": "Analysis not found"}, status_code=404)
-        
+        # Fall back to database status
         return JSONResponse({
-            "status": analysis["status"],
+            "status": db_status,
             "progress": analysis.get("progress", 0),
             "message": analysis.get("progress_message", ""),
             "error": analysis.get("error_message")
@@ -3469,7 +3589,8 @@ async def manual_journals(request: Request):
         tenant_name = selection["tenant_name"]
         
         # Check if async mode is requested
-        async_param = request.query_params.get("async", "true")
+        # Default to synchronous mode for better reliability
+        async_param = request.query_params.get("async", "false")
         use_async = async_param.lower() == "true"
         
         if use_async:
@@ -3551,22 +3672,33 @@ async def manual_journals(request: Request):
             
             try:
                 logger.info("Initializing MCP client for manual journals...")
-                mcp_client = XeroMCPClient(bearer_token=access_token)
+                mcp_client = XeroMCPClient(bearer_token=access_token, tenant_id=tenant_id)
                 
                 result = await mcp_client.call_tool("list-manual-journals", {})
-                if isinstance(result, dict) and "content" in result:
-                    logger.info("Processing manual journals content...")
-                    journals = await _process_manual_journals_content(
-                        result["content"], 
-                        mcp_client,
-                        access_token=access_token,
-                        tenant_id=tenant_id
-                    )
-                    
-                    for item in journals:
-                        if item.get("type") == "text":
-                            parsed_journal = _parse_manual_journal_text(item.get("text", ""))
-                            parsed_journals.append(parsed_journal)
+                if result is None:
+                    logger.warning("MCP server returned None for manual journals")
+                elif isinstance(result, dict) and "content" in result:
+                    content = result["content"]
+                    if not content:
+                        logger.info("MCP server returned empty content for manual journals")
+                    else:
+                        logger.info("Processing manual journals content...")
+                        journals = await _process_manual_journals_content(
+                            content, 
+                            mcp_client,
+                            access_token=access_token,
+                            tenant_id=tenant_id
+                        )
+                        
+                        for item in journals:
+                            if item.get("type") == "text":
+                                parsed_journal = _parse_manual_journal_text(item.get("text", ""))
+                                if parsed_journal:  # Only add if parsing succeeded
+                                    parsed_journals.append(parsed_journal)
+                else:
+                    logger.warning(f"MCP server returned unexpected result type {type(result)} for manual journals")
+                
+                logger.info(f"Parsed {len(parsed_journals)} manual journals from MCP response")
                 
                 await mcp_client.close()
                 mcp_client = None
@@ -3647,10 +3779,12 @@ async def bank_transactions(request: Request):
         selected_connection = selection["selected_connection"]
         selected_tenant = selection["selected_tenant"]
         access_token = selection["access_token"]
+        tenant_id = selection["tenant_id"]
         tenant_name = selection["tenant_name"]
         
         # Check if async mode is requested
-        async_param = request.query_params.get("async", "true")
+        # Default to synchronous mode for better reliability
+        async_param = request.query_params.get("async", "false")
         use_async = async_param.lower() == "true"
         
         if use_async:
@@ -3704,7 +3838,7 @@ async def bank_transactions(request: Request):
             
             # Start background task if not already running
             if progress_key not in _transaction_progress or _transaction_progress[progress_key]["status"] != "loading":
-                asyncio.create_task(_fetch_transactions_async(session_id, access_token))
+                asyncio.create_task(_fetch_transactions_async(session_id, access_token, tenant_id))
             
             # Return loading page
             return templates.TemplateResponse(
@@ -3732,16 +3866,25 @@ async def bank_transactions(request: Request):
             
             try:
                 logger.info("Initializing MCP client for bank transactions...")
-                mcp_client = XeroMCPClient(bearer_token=access_token)
+                mcp_client = XeroMCPClient(bearer_token=access_token, tenant_id=tenant_id)
                 
                 result = await mcp_client.call_tool("list-bank-transactions", {"page": 1})
-                if isinstance(result, dict) and "content" in result:
+                if result is None:
+                    logger.warning("MCP server returned None for bank transactions")
+                elif isinstance(result, dict) and "content" in result:
                     transactions = result["content"]
-                    
-                    for item in transactions:
-                        if item.get("type") == "text":
-                            parsed_transaction = _parse_bank_transaction_text(item.get("text", ""))
-                            parsed_transactions.append(parsed_transaction)
+                    if not transactions:
+                        logger.info("MCP server returned empty content for bank transactions")
+                    else:
+                        for item in transactions:
+                            if item.get("type") == "text":
+                                parsed_transaction = _parse_bank_transaction_text(item.get("text", ""))
+                                if parsed_transaction:  # Only add if parsing succeeded
+                                    parsed_transactions.append(parsed_transaction)
+                else:
+                    logger.warning(f"MCP server returned unexpected result type {type(result)} for bank transactions")
+                
+                logger.info(f"Parsed {len(parsed_transactions)} bank transactions from MCP response")
                 
                 await mcp_client.close()
                 mcp_client = None

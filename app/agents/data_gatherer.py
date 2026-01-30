@@ -682,8 +682,10 @@ class DataGatherer:
                 logger.warning("No bearer token available for Xero API call")
                 return journal_lines
             
-            # Extract tenant_id from organisation data
-            tenant_id = self._extract_tenant_id_from_collected_data()
+            # Get tenant_id from MCP client first, fall back to extracting from collected data
+            tenant_id = getattr(self.mcp_client, 'tenant_id', None)
+            if not tenant_id:
+                tenant_id = self._extract_tenant_id_from_collected_data()
             if not tenant_id:
                 logger.warning("No tenant ID available for Xero API call")
                 return journal_lines

@@ -4,16 +4,11 @@
 
 {% block extra_js %}
 <script>
-        // CRITICAL: Test that script is executing
-        console.log('HEAD SCRIPT: Script is executing...');
-        
         // CRITICAL: Define function DIRECTLY on window - no IIFE, no scope issues
         // This MUST be the first thing in the script to ensure it's always available
         try {
             window.showAddConnectionModal = function(category) {
                 try {
-                    console.log('showAddConnectionModal called with category:', category);
-                    
                     var categoryInput = document.getElementById('modal-category');
                     var softwareSelect = document.getElementById('modal-software');
                     var nameInput = document.getElementById('modal-name');
@@ -54,15 +49,11 @@
                     modal.style.display = 'flex';
                     return true;
                 } catch (e) {
-                    console.error('Error in showAddConnectionModal:', e);
                     alert('Error opening modal: ' + e.message);
                     return false;
                 }
             };
-            
-            console.log('HEAD SCRIPT: showAddConnectionModal function defined');
         } catch (e) {
-            console.error('HEAD SCRIPT ERROR: Failed to define showAddConnectionModal:', e);
             // Fallback definition
             window.showAddConnectionModal = function(cat) {
                 alert('Error: Function definition failed. Please refresh the page.');
@@ -76,51 +67,25 @@
                     modal.style.display = 'none';
                 }
             };
-            console.log('HEAD SCRIPT: closeAddConnectionModal function defined');
         } catch (e) {
-            console.error('HEAD SCRIPT ERROR: Failed to define closeAddConnectionModal:', e);
+            // Silent fail
         }
-        
-        // Verify functions are defined IMMEDIATELY
-        console.log('HEAD SCRIPT: Functions defined. showAddConnectionModal:', typeof window.showAddConnectionModal);
-        console.log('HEAD SCRIPT: Functions defined. closeAddConnectionModal:', typeof window.closeAddConnectionModal);
-        console.log('HEAD SCRIPT: window object check:', typeof window);
-        console.log('HEAD SCRIPT: showAddConnectionModal on window:', 'showAddConnectionModal' in window);
         
         // Load software options - AFTER functions are defined
         // This is in a separate try-catch so errors here don't prevent function definition
+        window.softwareOptions = {};
         try {
-            // Use JSON.parse to safely handle the Jinja2 template output
-            var softwareOptionsJson = {{ software_options|tojson }};
-            window.softwareOptions = softwareOptionsJson;
-            console.log('HEAD SCRIPT: Software options loaded:', window.softwareOptions);
+            window.softwareOptions = JSON.parse('{{ software_options|tojson|safe }}');
         } catch (e) {
-            console.error('HEAD SCRIPT ERROR: Error loading software options:', e);
-            console.error('HEAD SCRIPT ERROR: Error details:', e.message, e.stack);
             window.softwareOptions = {};
         }
         
         // Final verification and fallback
         if (typeof window.showAddConnectionModal !== 'function') {
-            console.error('ERROR: showAddConnectionModal is NOT a function!');
             // Last resort fallback - define a minimal version
             window.showAddConnectionModal = function(cat) {
                 alert('Error: Modal function failed to load properly. Please refresh the page.');
-                console.error('Fallback function called - original function was not defined');
             };
-        } else {
-            console.log('SUCCESS: showAddConnectionModal is ready');
-        }
-        
-        // Test that we can actually call it
-        try {
-            var testResult = typeof window.showAddConnectionModal;
-            console.log('Test: window.showAddConnectionModal type is:', testResult);
-            if (testResult !== 'function') {
-                console.error('CRITICAL: Function type check failed!');
-            }
-        } catch (e) {
-            console.error('CRITICAL: Error checking function:', e);
         }
     </script>
     <style>

@@ -228,9 +228,9 @@
                         </span>
                     </td>
                     <td>
-                        {% if analysis.status == "running" %}
+                        {% if analysis.status|lower == "running" %}
                             {{ analysis.progress or 0 }}%
-                        {% elif analysis.status == "completed" %}
+                        {% elif analysis.status|lower == "completed" %}
                             100%
                         {% else %}
                             -
@@ -367,12 +367,13 @@
                             .then(data => {
                                 updateProgress(data.progress || 0, data.message || 'Loading...');
                                 
-                                if (data.status === 'completed') {
+                                const status = (data.status || '').toLowerCase();
+                                
+                                if (status === 'completed' || status === 'complete') {
                                     clearInterval(pollInterval);
-                                    setTimeout(() => {
-                                        window.location.reload();
-                                    }, 500);
-                                } else if (data.status === 'failed') {
+                                    // Reload immediately to show results
+                                    window.location.reload();
+                                } else if (status === 'failed' || status === 'error') {
                                     clearInterval(pollInterval);
                                     updateProgress(0, 'Error: ' + (data.error || 'Unknown error'));
                                 }
@@ -387,14 +388,14 @@
                 })();
             </script>
         
-        {% elif analysis.status == "failed" %}
+        {% elif analysis.status|lower == "failed" %}
             <!-- Error View -->
             <div style="background: #f8d7da; color: #721c24; padding: 20px; border-radius: 8px;">
                 <h3>Analysis Failed</h3>
                 <p><strong>Error:</strong> {{ analysis.error_message or "Unknown error" }}</p>
             </div>
         
-        {% elif analysis.status == "completed" and analysis.result_data %}
+        {% elif analysis.status|lower == "completed" and analysis.result_data %}
             <!-- Results View -->
             {% set result = analysis.result_data %}
             

@@ -21,17 +21,18 @@ class PayrollRiskAgent:
     3. Result Generation (JSON + narrative)
     """
     
-    def __init__(self, bearer_token: str, llm_model: Optional[str] = None, use_agentic: Optional[bool] = None, progress_callback: Optional[Callable[[int, str], None]] = None):
+    def __init__(self, bearer_token: str, tenant_id: Optional[str] = None, llm_model: Optional[str] = None, use_agentic: Optional[bool] = None, progress_callback: Optional[Callable[[int, str], None]] = None):
         """
         Initialize the Payroll Risk Agent.
         
         Args:
             bearer_token: Xero access token
+            tenant_id: Optional tenant/organization ID to use for API calls
             llm_model: Optional LLM model name (for OpenAI only, ignored for Toqan)
             use_agentic: Optional flag to override config.USE_AGENTIC_ARCHITECTURE
             progress_callback: Optional callback function(progress: int, message: str) for progress updates
         """
-        self.mcp_client = XeroMCPClient(bearer_token=bearer_token)
+        self.mcp_client = XeroMCPClient(bearer_token=bearer_token, tenant_id=tenant_id)
         self.data_gatherer = DataGatherer(self.mcp_client)
         self.data_gatherer.set_progress_callback(progress_callback)
         self.llm_engine = create_llm_engine(model=llm_model, use_agentic=use_agentic)

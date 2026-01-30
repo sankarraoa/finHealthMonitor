@@ -134,7 +134,7 @@ class PayrollRiskDB:
         try:
             cursor.execute("""
                 UPDATE payroll_risk_analyses
-                SET status = ?, completed_at = ?, result_data = ?, progress = 100, progress_message = ?
+                SET status = ?, completed_at = ?, result_data = ?, progress = ?, progress_message = ?
                 WHERE id = ?
             """, (
                 "completed",

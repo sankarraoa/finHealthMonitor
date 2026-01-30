@@ -13,13 +13,14 @@ logger = logging.getLogger(__name__)
 class XeroMCPClient:
     """Client for interacting with Xero MCP Server via stdio."""
     
-    def __init__(self, mcp_server_path: Optional[str] = None, bearer_token: Optional[str] = None):
+    def __init__(self, mcp_server_path: Optional[str] = None, bearer_token: Optional[str] = None, tenant_id: Optional[str] = None):
         """
         Initialize MCP client.
         
         Args:
             mcp_server_path: Path to the MCP server executable
             bearer_token: Optional bearer token for authentication (takes precedence)
+            tenant_id: Optional tenant/organization ID to use for API calls
         """
         # Default to the installed MCP server in the project
         if mcp_server_path is None:
@@ -32,8 +33,11 @@ class XeroMCPClient:
         self._initialized = False
         self._env = os.environ.copy()
         self.bearer_token = bearer_token
+        self.tenant_id = tenant_id
         
         logger.info(f"Initializing XeroMCPClient with server path: {self.mcp_server_path}")
+        if tenant_id:
+            logger.info(f"Using tenant_id: {tenant_id}")
         
         # Check if MCP server file exists
         if not os.path.exists(self.mcp_server_path):
@@ -58,6 +62,11 @@ class XeroMCPClient:
             self._env["XERO_CLIENT_ID"] = config.XERO_CLIENT_ID
             self._env["XERO_CLIENT_SECRET"] = config.XERO_CLIENT_SECRET
             logger.info("Using client ID/secret for authentication")
+        
+        # Set tenant_id if provided
+        if tenant_id:
+            self._env["XERO_TENANT_ID"] = tenant_id
+            logger.info(f"Set XERO_TENANT_ID environment variable: {tenant_id}")
     
     async def _ensure_initialized(self):
         """Ensure MCP server process is running."""
@@ -232,7 +241,9 @@ class XeroMCPClient:
                 
                 # Read response (non-blocking)
                 try:
+                    logger.info(f"Waiting for response from MCP server (request ID: {request_id}, method: {method})...")
                     response_line = await asyncio.to_thread(self.process.stdout.readline)
+                    logger.debug(f"Received response line (length: {len(response_line) if response_line else 0} chars)")
                     if not response_line:
                         # Check if process is still alive
                         if self.process.poll() is not None:
@@ -258,8 +269,15 @@ class XeroMCPClient:
                                 raise RuntimeError(f"MCP server process exited unexpectedly with code {exit_code}")
                         raise RuntimeError("No response from MCP server (process still running)")
                     
-                    logger.debug(f"Response received (length: {len(response_line)} chars)")
+                    logger.info(f"Response received (length: {len(response_line)} chars, request ID: {request_id})")
+                    logger.debug(f"Response preview: {response_line[:200] if len(response_line) > 200 else response_line}")
                     response = json.loads(response_line.strip())
+                    response_id = response.get('id', 'N/A')
+                    logger.info(f"Parsed response (ID: {response_id}, has result: {'result' in response}, has error: {'error' in response})")
+                    
+                    # Verify response ID matches request ID
+                    if response_id != request_id:
+                        logger.warning(f"Response ID {response_id} does not match request ID {request_id}")
                     
                     # Check for errors
                     if "error" in response:
@@ -366,7 +384,21 @@ class XeroMCPClient:
             }
         }
         
-        response = await self._send_request(request)
+        logger.info(f"Sending tool call request (ID: {request['id']})...")
+        try:
+            # Add timeout to prevent indefinite hanging (60 seconds for tool calls)
+            response = await asyncio.wait_for(
+                self._send_request(request),
+                timeout=60.0
+            )
+            logger.info(f"Tool call request completed (ID: {request['id']})")
+        except asyncio.TimeoutError:
+            logger.error(f"Tool call {tool_name} timed out after 60 seconds")
+            raise RuntimeError(f"Tool call {tool_name} timed out after 60 seconds. The MCP server may be unresponsive.")
+        except Exception as e:
+            logger.error(f"Error calling tool {tool_name}: {str(e)}", exc_info=True)
+            raise
+        
         result = response.get("result", {})
         logger.info(f"Tool {tool_name} returned result (keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'})")
         return result
@@ -528,14 +560,19 @@ class XeroMCPClient:
                 if item.get("type") == "text":
                     text = item.get("text", "")
                     logger.debug(f"Text content length: {len(text)}, starts with 'Found': {text.startswith('Found') if text else False}")
-                    if text and not text.startswith("Found"):  # Skip summary lines
-                        logger.debug(f"Parsing invoice text (first 200 chars): {text[:200]}")
-                        invoice = self._parse_invoice_text(text)
-                        if invoice:
-                            logger.debug(f"Successfully parsed invoice: {invoice.get('InvoiceNumber', 'Unknown')}")
-                            invoices.append(invoice)
+                    if text:
+                        if text.startswith("Found"):
+                            logger.debug(f"Skipping summary line: {text[:100]}")
                         else:
-                            logger.warning(f"Failed to parse invoice from text: {text[:200]}")
+                            logger.debug(f"Parsing invoice text (first 200 chars): {text[:200]}")
+                            invoice = self._parse_invoice_text(text)
+                            if invoice:
+                                logger.debug(f"Successfully parsed invoice: {invoice.get('InvoiceNumber', 'Unknown')}")
+                                invoices.append(invoice)
+                            else:
+                                logger.warning(f"Failed to parse invoice from text (first 200 chars): {text[:200]}")
+                    else:
+                        logger.debug(f"Empty text content in item {idx}")
         
         logger.info(f"Parsed {len(invoices)} invoices from {len(content)} content items")
         return invoices
