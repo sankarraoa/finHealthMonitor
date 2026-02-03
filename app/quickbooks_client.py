@@ -15,11 +15,18 @@ class QuickBooksClient:
         self.client_id = os.getenv("QUICKBOOKS_CLIENT_ID", "")
         self.client_secret = os.getenv("QUICKBOOKS_CLIENT_SECRET", "")
         self.redirect_uri = os.getenv("QUICKBOOKS_REDIRECT_URI", "http://localhost:8000/quickbooks/callback")
+        self.environment = os.getenv("QUICKBOOKS_ENVIRONMENT", "sandbox").lower()
         
         # QuickBooks OAuth endpoints
-        self.auth_url = "https://appcenter.intuit.com/connect/oauth2"
-        self.token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
-        self.api_base_url = "https://sandbox-quickbooks.api.intuit.com"  # Use sandbox for development
+        # For sandbox, use sandbox endpoints; for production, use production endpoints
+        if self.environment == "sandbox":
+            self.auth_url = "https://appcenter.intuit.com/connect/oauth2"
+            self.token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+            self.api_base_url = "https://sandbox-quickbooks.api.intuit.com"
+        else:
+            self.auth_url = "https://appcenter.intuit.com/connect/oauth2"
+            self.token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+            self.api_base_url = "https://quickbooks.api.intuit.com"
         
         # Scopes for QuickBooks
         self.scopes = "com.intuit.quickbooks.accounting"
@@ -34,6 +41,11 @@ class QuickBooksClient:
         Returns:
             Authorization URL string
         """
+        if not self.client_id:
+            raise ValueError("QUICKBOOKS_CLIENT_ID is not set")
+        if not self.redirect_uri:
+            raise ValueError("QUICKBOOKS_REDIRECT_URI is not set")
+        
         params = {
             "client_id": self.client_id,
             "scope": self.scopes,
@@ -41,7 +53,13 @@ class QuickBooksClient:
             "response_type": "code",
             "state": state or "default"
         }
-        return f"{self.auth_url}?{urlencode(params)}"
+        
+        # Add environment parameter for sandbox
+        if self.environment == "sandbox":
+            params["environment"] = "sandbox"
+        
+        auth_url = f"{self.auth_url}?{urlencode(params)}"
+        return auth_url
     
     def get_access_token(self, authorization_code: str) -> Dict[str, Any]:
         """
@@ -73,6 +91,14 @@ class QuickBooksClient:
             response = requests.post(self.token_url, headers=headers, data=data)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            error_detail = ""
+            try:
+                error_response = response.json()
+                error_detail = f" - {error_response}"
+            except:
+                error_detail = f" - {response.text}"
+            raise Exception(f"Failed to get QuickBooks access token: {str(e)}{error_detail}")
         except requests.exceptions.RequestException as e:
             raise Exception(f"Failed to get QuickBooks access token: {str(e)}")
     

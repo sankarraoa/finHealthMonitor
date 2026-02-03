@@ -11,94 +11,22 @@
         margin-bottom: 20px;
     }
     
-    .new-analysis-btn {
-        background: #667eea;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 6px;
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        border: none;
-        cursor: pointer;
-    }
-    
-    .new-analysis-btn:hover {
-        background: #5568d3;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-    
-    .analyses-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: white;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    }
-    
-    .analyses-table thead {
-        background: #f8f9fa;
-    }
-    
-    .analyses-table th {
-        padding: 15px;
-        text-align: left;
-        font-weight: 600;
-        color: #333;
-        border-bottom: 2px solid #dee2e6;
-        font-size: 0.9em;
-        text-transform: uppercase;
-    }
-    
-    .analyses-table td {
-        padding: 15px;
-        border-bottom: 1px solid #dee2e6;
-        color: #333;
-    }
-    
-    .analyses-table tbody tr:hover {
-        background: #f8f9fa;
-        cursor: pointer;
-    }
-    
-    .analyses-table tbody tr:last-child td {
-        border-bottom: none;
-    }
-    
-    .status-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.85em;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-    
-    .status-running {
-        background: #d1ecf1;
-        color: #0c5460;
-    }
-    
-    .status-completed {
-        background: #d4edda;
-        color: #155724;
-    }
-    
-    .status-failed {
-        background: #f8d7da;
-        color: #721c24;
-    }
     
     .view-icon {
         color: #667eea;
         font-size: 1.2em;
         text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .view-icon:hover {
         color: #5568d3;
+    }
+    
+    .view-icon i {
+        font-size: inherit;
     }
     
     .modal {
@@ -146,17 +74,43 @@
     
     .form-group label {
         display: block;
-        margin-bottom: 8px;
-        font-weight: 600;
-        color: #333;
+        margin-bottom: 10px;
+        height: 19px;
+        font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-style: normal;
+        font-size: 14px;
+        line-height: 19px;
+        color: #606060;
     }
     
-    .form-group select {
+    .form-group select,
+    .form-group input[type="text"],
+    .form-group input[type="email"],
+    .form-group input[type="number"],
+    .form-group input[type="date"],
+    .form-group textarea {
         width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        font-size: 1em;
+        box-sizing: border-box;
+        height: 50px;
+        padding: 0 12px;
+        background: #F5F6FA;
+        border: 0.6px solid #D5D5D5;
+        border-radius: 4px;
+        font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-style: normal;
+        font-weight: 500;
+        font-size: 14px;
+        line-height: 19px;
+        color: #202224;
+        min-height: 50px;
+
+    }
+    
+    .form-group textarea {
+        height: auto;
+        min-height: 50px;
+        padding: 12px;
+        resize: vertical;
     }
     
     .progress-container {
@@ -186,6 +140,25 @@
         color: white;
         font-weight: 600;
     }
+    
+    .analysis-info-label {
+        font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-style: normal;
+        font-weight: 400;
+        font-size: 16px;
+        line-height: 22px;
+        color: #404040;
+        margin-bottom: 8px;
+    }
+    
+    .analysis-info-value {
+        font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-style: normal;
+        font-weight: 600;
+        font-size: 16px;
+        line-height: 22px;
+        color: #404040;
+    }
 </style>
 {% endblock %}
 
@@ -194,13 +167,15 @@
     {% if view_mode == "list" %}
         <!-- List View -->
         <div class="payroll-risk-header">
-            <h2 style="margin: 0;">Payroll Risk Early Warning</h2>
-            <button class="new-analysis-btn" onclick="openNewAnalysisModal()">+ New Analysis</button>
+            <h2>Payroll Risk Early Warning</h2>
+            <button class="btn btn-primary" onclick="openNewAnalysisModal()">+ New Analysis</button>
         </div>
         
+        <p>Payroll Risk Early Warning helps you identify potential cash flow issues before payroll dates. The system analyzes your current cash position, upcoming payroll obligations, and projected cash flow to provide early warnings and actionable recommendations.</p>
+        
         {% if error %}
-        <div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-            <strong>Error:</strong> {{ error }}
+        <div style="background: #f8d7da; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+            <p><strong>Error:</strong> {{ error }}</p>
         </div>
         {% endif %}
         
@@ -220,11 +195,11 @@
                 {% for analysis in analyses %}
                 <tr onclick="window.location.href='/payroll-risk/{{ analysis.id }}'">
                     <td>{{ analysis.initiated_at[:19].replace('T', ' ') }}</td>
-                    <td>{{ analysis.connection_name }}</td>
+                    <td class="row-text-bold">{{ analysis.connection_name }}</td>
                     <td>{{ analysis.tenant_name or '-' }}</td>
                     <td>
-                        <span class="status-badge status-{{ analysis.status }}">
-                            {{ analysis.status }}
+                        <span class="status-badge status-{{ analysis.status|lower }}">
+                            <span>{{ analysis.status }}</span>
                         </span>
                     </td>
                     <td>
@@ -237,16 +212,32 @@
                         {% endif %}
                     </td>
                     <td>
-                        <a href="/payroll-risk/{{ analysis.id }}" class="view-icon" onclick="event.stopPropagation();">👁️</a>
+                        <a href="/payroll-risk/{{ analysis.id }}" class="view-icon" onclick="event.stopPropagation();">
+                            <i class="las la-eye"></i>
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        
+        <!-- Pagination Control -->
+        <div class="pagination-control">
+            <button id="prevPage" onclick="navigatePage(-1)" disabled>
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <button id="nextPage" onclick="navigatePage(1)">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </div>
         {% else %}
-        <div style="text-align: center; padding: 60px 20px; color: #666;">
-            <p style="font-size: 1.2em; margin-bottom: 20px;">No payroll risk analyses yet.</p>
-            <button class="new-analysis-btn" onclick="openNewAnalysisModal()">Start Your First Analysis</button>
+        <div style="text-align: center; padding: 60px 20px;">
+            <p>No payroll risk analyses yet.</p>
+            <button class="btn btn-primary" onclick="openNewAnalysisModal()">Start Your First Analysis</button>
         </div>
         {% endif %}
         
@@ -254,7 +245,7 @@
         <div id="newAnalysisModal" class="modal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 style="margin: 0;">Start New Payroll Risk Analysis</h3>
+                    <h3>Start New Payroll Risk Analysis</h3>
                     <span class="close" onclick="closeNewAnalysisModal()">&times;</span>
                 </div>
                 <form action="/payroll-risk/new" method="POST" id="newAnalysisForm">
@@ -297,26 +288,40 @@
         
         <!-- Analysis Info -->
         <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
                 <div>
-                    <strong>Connection:</strong> {{ analysis.connection_name }}
+                    <div class="analysis-info-label">Connection</div>
+                    <div class="analysis-info-value">{{ analysis.connection_name }}</div>
                 </div>
                 <div>
-                    <strong>Tenant:</strong> {{ analysis.tenant_name or 'N/A' }}
+                    <div class="analysis-info-label">Tenant</div>
+                    <div class="analysis-info-value">{{ analysis.tenant_name or 'N/A' }}</div>
                 </div>
                 <div>
-                    <strong>Initiated:</strong> {{ analysis.initiated_at[:19].replace('T', ' ') }}
+                    <div class="analysis-info-label">Initiated</div>
+                    <div class="analysis-info-value" data-date="{{ analysis.initiated_at or '' }}">
+                        {% if analysis.initiated_at %}
+                            {{ analysis.initiated_at[:19].replace('T', ' ') }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </div>
                 </div>
                 {% if analysis.completed_at %}
                 <div>
-                    <strong>Completed:</strong> {{ analysis.completed_at[:19].replace('T', ' ') }}
+                    <div class="analysis-info-label">Completed</div>
+                    <div class="analysis-info-value" data-date="{{ analysis.completed_at or '' }}">
+                        {{ analysis.completed_at[:19].replace('T', ' ') }}
+                    </div>
                 </div>
                 {% endif %}
                 <div>
-                    <strong>Status:</strong> 
-                    <span class="status-badge status-{{ analysis.status }}">
-                        {{ analysis.status }}
-                    </span>
+                    <div class="analysis-info-label">Status</div>
+                    <div>
+                        <span class="status-badge status-{{ analysis.status|lower }}">
+                            <span>{{ analysis.status }}</span>
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -331,7 +336,7 @@
                         {{ analysis.progress or 0 }}%
                     </div>
                 </div>
-                <p style="color: #666; margin-top: 10px; font-size: 0.9em;">This may take 60-90 seconds. You can navigate away and come back later.</p>
+                <p>This may take 60-90 seconds. You can navigate away and come back later.</p>
             </div>
             
             <script>
@@ -390,7 +395,7 @@
         
         {% elif analysis.status|lower == "failed" %}
             <!-- Error View -->
-            <div style="background: #f8d7da; color: #721c24; padding: 20px; border-radius: 8px;">
+            <div style="background: #f8d7da; padding: 20px; border-radius: 8px;">
                 <h3>Analysis Failed</h3>
                 <p><strong>Error:</strong> {{ analysis.error_message or "Unknown error" }}</p>
             </div>
@@ -399,23 +404,19 @@
             <!-- Results View -->
             {% set result = analysis.result_data %}
             
-            <!-- Status Card -->
+            <!-- Risk Level Card -->
             {% set health_value = result.health_status if result.health_status else 'Red' %}
-            <div class="status-card" style="background: {% if health_value == 'Green' %}#d4edda{% elif health_value == 'Yellow' %}#fff3cd{% else %}#f8d7da{% endif %}; 
-                border: 2px solid {% if health_value == 'Green' %}#28a745{% elif health_value == 'Yellow' %}#ffc107{% else %}#dc3545{% endif %}; 
-                border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <div style="font-size: 3em;">
-                        {% if health_value == 'Green' %}✅{% elif health_value == 'Yellow' %}⚠️{% else %}🔴{% endif %}
-                    </div>
-                    <div>
-                        <h3 style="margin: 0; color: {% if health_value == 'Green' %}#155724{% elif health_value == 'Yellow' %}#856404{% else %}#721c24{% endif %};">
-                            Status: {{ health_value }}
-                        </h3>
-                        {% if result.near_miss %}
-                        <p style="margin: 5px 0 0 0; color: #856404; font-weight: 600;">⚠️ Near Miss - Close to insufficient coverage</p>
-                        {% endif %}
-                    </div>
+            {% set risk_class = 'risk-green' if health_value == 'Green' else ('risk-yellow' if health_value == 'Yellow' else 'risk-red') %}
+            <div class="risk-level-card {{ risk_class }}">
+                <div class="risk-level-indicator">
+                    {% if health_value == 'Green' %}✓{% elif health_value == 'Yellow' %}⚠{% else %}✕{% endif %}
+                </div>
+                <div class="risk-level-content">
+                    <div class="risk-level-label">Risk Level</div>
+                    <div class="risk-level-value">{{ health_value }}</div>
+                    {% if result.near_miss %}
+                    <div class="risk-level-near-miss">⚠️ Near Miss - Close to insufficient coverage</div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -423,7 +424,7 @@
             <div class="summary-stats" style="margin-bottom: 30px;">
                 <div class="stat-card">
                     <div class="stat-label">Payroll Date</div>
-                    <div class="stat-value" style="font-size: 1.2em;">{{ result.payroll_date[:10] if result.payroll_date else 'N/A' }}</div>
+                    <div class="stat-value">{{ result.payroll_date[:10] if result.payroll_date else 'N/A' }}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Payroll Amount</div>
@@ -442,8 +443,8 @@
             <!-- Advisory Narrative -->
             {% if result.advisory_narrative %}
             <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; border-radius: 6px; margin-bottom: 30px;">
-                <h3 style="margin-top: 0; color: #333;">Advisory Summary</h3>
-                <p style="margin: 0; line-height: 1.6; color: #555;">{{ result.advisory_narrative }}</p>
+                <h3>Advisory Summary</h3>
+                <p>{{ result.advisory_narrative }}</p>
             </div>
             {% endif %}
 
@@ -454,7 +455,7 @@
                 <ul style="list-style-type: none; padding: 0;">
                     {% for driver in result.key_risk_drivers %}
                     <li style="padding: 10px; margin-bottom: 8px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-                        {{ driver }}
+                        <p>{{ driver }}</p>
                     </li>
                     {% endfor %}
                 </ul>
@@ -467,7 +468,9 @@
                 <h3>Recommended Actions</h3>
                 <ol style="padding-left: 20px;">
                     {% for action in result.recommended_actions %}
-                    <li style="padding: 8px 0; color: #333;">{{ action }}</li>
+                    <li style="padding: 8px 0;">
+                        <p>{{ action }}</p>
+                    </li>
                     {% endfor %}
                 </ol>
             </div>
@@ -480,15 +483,15 @@
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                     {% for scenario_name, scenario in result.scenarios.items() %}
                     <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #dee2e6;">
-                        <div style="font-weight: 600; color: #667eea; margin-bottom: 10px; text-transform: capitalize;">
+                        <div class="analysis-info-label" style="text-transform: capitalize; margin-bottom: 10px;">
                             {{ scenario_name }}
                         </div>
-                        <div style="font-size: 1.5em; font-weight: 700; color: #333;">
+                        <div class="analysis-info-value" style="font-size: 1.5em; margin-bottom: 5px;">
                             ${{ "%.2f"|format(scenario.projected_cash) if scenario.projected_cash else '0.00' }}
                         </div>
-                        <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                        <p>
                             Coverage: {{ "%.2f"|format(scenario.coverage_ratio) if scenario.coverage_ratio else '0.00' }}x
-                        </div>
+                        </p>
                     </div>
                     {% endfor %}
                 </div>
@@ -497,27 +500,31 @@
 
             <!-- Technical Details (Collapsible) -->
             <details style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-                <summary style="cursor: pointer; font-weight: 600; color: #667eea;">Technical Details</summary>
+                <summary style="cursor: pointer;">Technical Details</summary>
                 <div style="margin-top: 15px;">
                     <p><strong>Detection Tier:</strong> {{ result.detection_tier if result.detection_tier else 'N/A' }} ({{ result.detection_confidence if result.detection_confidence else 'N/A' }} confidence)</p>
                     <p><strong>Forecast Confidence:</strong> {{ result.forecast_confidence if result.forecast_confidence else 'N/A' }}%</p>
                     <p><strong>Data Completeness:</strong> {{ result.data_completeness_score if result.data_completeness_score else 'N/A' }}%</p>
                     {% if result.assumptions %}
                     <div style="margin-top: 15px;">
-                        <strong>Assumptions:</strong>
-                        <ul style="margin-top: 5px;">
+                        <p><strong>Assumptions:</strong></p>
+                        <ul style="margin-top: 5px; padding-left: 20px;">
                             {% for assumption in result.assumptions %}
-                            <li style="color: #666;">{{ assumption }}</li>
+                            <li>
+                                <p>{{ assumption }}</p>
+                            </li>
                             {% endfor %}
                         </ul>
                     </div>
                     {% endif %}
                     {% if result.warnings %}
                     <div style="margin-top: 15px;">
-                        <strong>Warnings:</strong>
-                        <ul style="margin-top: 5px;">
+                        <p><strong>Warnings:</strong></p>
+                        <ul style="margin-top: 5px; padding-left: 20px;">
                             {% for warning in result.warnings %}
-                            <li style="color: #856404;">{{ warning }}</li>
+                            <li>
+                                <p>{{ warning }}</p>
+                            </li>
                             {% endfor %}
                         </ul>
                     </div>
@@ -585,5 +592,79 @@
                 tenantGroup.style.display = 'none';
             });
     }
+    
+    // Pagination functionality
+    let currentPage = 1;
+    const rowsPerPage = 10;
+    
+    function navigatePage(direction) {
+        const table = document.querySelector('.analyses-table');
+        if (!table) return;
+        
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const totalPages = Math.ceil(rows.length / rowsPerPage);
+        
+        currentPage += direction;
+        
+        if (currentPage < 1) currentPage = 1;
+        if (currentPage > totalPages) currentPage = totalPages;
+        
+        // Hide all rows
+        rows.forEach(row => row.style.display = 'none');
+        
+        // Show rows for current page
+        const start = (currentPage - 1) * rowsPerPage;
+        const end = start + rowsPerPage;
+        rows.slice(start, end).forEach(row => row.style.display = '');
+        
+        // Update button states
+        const prevBtn = document.getElementById('prevPage');
+        const nextBtn = document.getElementById('nextPage');
+        
+        if (prevBtn) prevBtn.disabled = currentPage === 1;
+        if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+    }
+    
+    // Initialize pagination on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const table = document.querySelector('.analyses-table');
+        if (table) {
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            if (rows.length > rowsPerPage) {
+                navigatePage(0); // Initialize to show first page
+            } else {
+                // Hide pagination if not needed
+                const pagination = document.querySelector('.pagination-control');
+                if (pagination) pagination.style.display = 'none';
+            }
+        }
+        
+        // Format dates in analysis info
+        function formatDate(dateStr) {
+            if (!dateStr || dateStr === 'N/A') return 'N/A';
+            
+            try {
+                const date = new Date(dateStr);
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = months[date.getMonth()];
+                const year = date.getFullYear();
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                
+                return `${day}-${month}-${year} ${hours}:${minutes}`;
+            } catch (e) {
+                return dateStr;
+            }
+        }
+        
+        // Apply date formatting to all analysis-info-value elements with data-date attribute
+        document.querySelectorAll('.analysis-info-value[data-date]').forEach(function(el) {
+            const dateStr = el.getAttribute('data-date');
+            if (dateStr) {
+                el.textContent = formatDate(dateStr);
+            }
+        });
+    });
 </script>
 {% endblock %}

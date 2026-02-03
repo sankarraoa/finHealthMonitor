@@ -46,7 +46,7 @@
                         }
                     }
                     
-                    modal.style.display = 'flex';
+                    modal.style.display = 'block';
                     return true;
                 } catch (e) {
                     alert('Error opening modal: ' + e.message);
@@ -96,63 +96,76 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
+            margin-top: 40px;
             padding-bottom: 10px;
             border-bottom: 2px solid #dee2e6;
         }
+        .category-section:first-of-type .category-header {
+            margin-top: 20px;
+        }
         .category-title {
-            font-size: 1.5em;
-            font-weight: 600;
-            color: #333;
             margin: 0;
         }
         .connection-card {
             background: #fff;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-            border: 2px solid #dee2e6;
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 0.3px solid #B9B9B9;
             transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
         }
         .connection-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             border-color: #667eea;
         }
         .connection-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
         .connection-info {
             flex: 1;
         }
         .connection-name {
-            font-size: 1.2em;
-            font-weight: 600;
-            color: #333;
-            margin: 0 0 8px 0;
+            margin: 0 0 16px 0;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
+        }
+        .connection-name-display {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .connection-name-display span {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 700;
+            font-size: 24px;
+            line-height: 33px;
+            letter-spacing: 0.3px;
+            color: #202224;
         }
         .connection-name input {
-            font-size: 1.2em;
-            font-weight: 600;
-            padding: 5px 10px;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 700;
+            font-size: 24px;
+            line-height: 33px;
+            letter-spacing: 0.3px;
+            padding: 8px 12px;
             border: 2px solid #667eea;
             border-radius: 4px;
             width: 300px;
+            color: #202224;
         }
         .connection-name-edit {
             display: none;
         }
         .connection-name-edit.active {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .connection-name-display {
             display: flex;
             align-items: center;
             gap: 10px;
@@ -163,36 +176,28 @@
         .connection-meta {
             display: flex;
             flex-wrap: wrap;
-            gap: 15px;
-            margin-top: 8px;
-            font-size: 0.9em;
-            color: #666;
+            gap: 20px;
+            margin-top: 0;
+            align-items: center;
+        }
+        .connection-meta span:not(.status-badge) {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 400;
+            font-size: 14px;
+            line-height: 19px;
+            color: #606060;
         }
         .connection-status {
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.85em;
-            font-weight: 500;
-        }
-        .status-connected {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status-disconnected {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        .status-expired {
-            background: #fff3cd;
-            color: #856404;
         }
         .connection-actions {
             display: flex;
-            gap: 8px;
+            gap: 12px;
             flex-wrap: wrap;
+            align-items: center;
         }
         .action-btn {
             padding: 8px 16px;
@@ -206,10 +211,14 @@
             gap: 6px;
             transition: all 0.2s ease;
             text-decoration: none;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         }
         .action-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .action-btn i {
+            font-size: 1em;
         }
         .btn-connect {
             background: #28a745;
@@ -232,12 +241,62 @@
         .btn-refresh:hover {
             background: #5568d3;
         }
-        .btn-edit {
-            background: #6c757d;
-            color: white;
+        .edit-icon-link {
+            color: #4880FF;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            margin-left: 8px;
+            font-size: 20px;
+            transition: color 0.2s ease;
         }
-        .btn-edit:hover {
-            background: #5a6268;
+        .edit-icon-link:hover {
+            color: #3749A6;
+        }
+        .icon-action-link {
+            color: #4880FF;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            font-size: 20px;
+            margin-left: 12px;
+            transition: color 0.2s ease;
+        }
+        .icon-action-link:hover {
+            color: #3749A6;
+        }
+        .icon-action-link.danger {
+            color: #dc3545;
+        }
+        .icon-action-link.danger:hover {
+            color: #c82333;
+        }
+        .tenant-item {
+            position: relative;
+        }
+        .tenant-item .remove-icon-link {
+            display: none;
+            color: #dc3545;
+            text-decoration: none;
+            font-size: 18px;
+            margin-left: 8px;
+        }
+        .tenant-item:hover .remove-icon-link {
+            display: inline-flex;
+            align-items: center;
+        }
+        .remove-icon-link {
+            color: #dc3545;
+            text-decoration: none;
+            font-size: 18px;
+            margin-left: 8px;
+        }
+        .remove-icon-link:hover {
+            color: #c82333;
+        }
+        .btn-primary i,
+        .btn-secondary i {
+            margin-right: 8px;
         }
         .btn-save {
             background: #28a745;
@@ -247,29 +306,85 @@
             background: #6c757d;
             color: white;
         }
-        .add-connection-btn {
-            background: #667eea;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-            margin-top: 10px;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .add-connection-btn:hover {
-            background: #5568d3;
-        }
-        .software-icon {
-            font-size: 1.5em;
-        }
         .empty-state {
             text-align: center;
             padding: 40px;
-            color: #6c757d;
+        }
+        /* Modal Styles - matching payroll-risk.html */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: #000;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            height: 19px;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-size: 14px;
+            line-height: 19px;
+            color: #606060;
+        }
+        .form-group select,
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group input[type="date"],
+        .form-group textarea {
+            width: 100%;
+            box-sizing: border-box;
+            height: 50px;
+            padding: 0 12px;
+            background: #F5F6FA;
+            border: 0.6px solid #D5D5D5;
+            border-radius: 4px;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 500;
+            font-size: 14px;
+            line-height: 19px;
+            color: #202224;
+            min-height: 50px;
+        }
+        .form-group textarea {
+            height: auto;
+            min-height: 50px;
+            padding: 12px;
+            resize: vertical;
         }
     </style>
 {% endblock %}
@@ -277,14 +392,14 @@
 {% block content %}
 <div class="content-section">
     {% if error %}
-    <div class="error-message" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-        <strong>Error:</strong> {{ error }}
+    <div style="background: #f8d7da; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+        <p><strong>Error:</strong> {{ error }}</p>
     </div>
     {% endif %}
 
     {% if success %}
-    <div class="success-message" style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-        <strong>Success:</strong> {{ success }}
+    <div style="background: #d4edda; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+        <p><strong>Success:</strong> {{ success }}</p>
     </div>
     {% endif %}
 
@@ -304,31 +419,32 @@
                             <div class="connection-info">
                                 <div class="connection-name">
                                     <div class="connection-name-display">
-                                        <span class="software-icon">{{ software_info[connection.software].icon }}</span>
                                         <span id="name-display-{{ connection.id }}">{{ connection.name }}</span>
-                                        <button class="action-btn btn-edit" onclick="editConnectionName('{{ connection.id }}')" title="Edit name">
-                                            Edit
-                                        </button>
+                                        <a href="#" class="edit-icon-link" onclick="event.preventDefault(); editConnectionName('{{ connection.id }}'); return false;" title="Edit name">
+                                            <i class="las la-edit"></i>
+                                        </a>
                                     </div>
                                     <div class="connection-name-edit" id="name-edit-{{ connection.id }}">
                                         <input type="text" id="name-input-{{ connection.id }}" value="{{ connection.name }}" />
-                                        <button class="action-btn btn-save" onclick="saveConnectionName('{{ connection.id }}')" title="Save">
+                                        <button type="button" class="btn btn-primary" onclick="saveConnectionName('{{ connection.id }}')" title="Save" style="width: auto; height: auto; padding: 8px 16px;">
                                             Save
                                         </button>
-                                        <button class="action-btn btn-cancel" onclick="cancelEditName('{{ connection.id }}')" title="Cancel">
+                                        <button type="button" class="btn btn-secondary" onclick="cancelEditName('{{ connection.id }}')" title="Cancel" style="width: auto; height: auto; padding: 8px 16px;">
                                             Cancel
                                         </button>
                                     </div>
                                 </div>
                                 <div class="connection-meta">
-                                    <span class="connection-status {% if connection.access_token and not connection.get('token_expired') %}status-connected{% elif connection.get('token_expired') %}status-expired{% else %}status-disconnected{% endif %}">
-                                        {% if connection.access_token and not connection.get('token_expired') %}
-                                            Connected
-                                        {% elif connection.get('token_expired') %}
-                                            Expired - Click Refresh to renew
-                                        {% else %}
-                                            Not Connected
-                                        {% endif %}
+                                    <span class="status-badge {% if connection.access_token and not connection.get('token_expired') %}status-completed{% elif connection.get('token_expired') %}status-onhold{% else %}status-failed{% endif %}">
+                                        <span>
+                                            {% if connection.access_token and not connection.get('token_expired') %}
+                                                Connected
+                                            {% elif connection.get('token_expired') %}
+                                                Expired - Click Refresh to renew
+                                            {% else %}
+                                                Not Connected
+                                            {% endif %}
+                                        </span>
                                     </span>
                                     {% if connection.software == 'xero' %}
                                     <span>Type: Xero</span>
@@ -345,35 +461,35 @@
                                 {% if connection.access_token %}
                                     {% if connection.get('token_expired') %}
                                     <form method="post" action="/connections/{{ connection.id }}/refresh" style="margin: 0; display: inline;">
-                                        <button type="submit" class="action-btn btn-refresh" title="Refresh Expired Token">
-                                            Refresh Token
+                                        <button type="submit" class="icon-action-link" title="Refresh Expired Token" style="background: none; border: none; padding: 0; cursor: pointer;">
+                                            <i class="las la-sync-alt"></i>
                                         </button>
                                     </form>
                                     {% else %}
                                     <form method="post" action="/connections/{{ connection.id }}/refresh" style="margin: 0; display: inline;">
-                                        <button type="submit" class="action-btn btn-refresh" title="Refresh Token">
-                                            Refresh
+                                        <button type="submit" class="icon-action-link" title="Refresh Token" style="background: none; border: none; padding: 0; cursor: pointer;">
+                                            <i class="las la-sync-alt"></i>
                                         </button>
                                     </form>
                                     {% endif %}
                                     {% if connection.software == 'xero' %}
                                     <form method="post" action="/connections/{{ connection.id }}/add-tenant" style="margin: 0; display: inline;">
-                                        <button type="submit" class="action-btn btn-connect" title="Add Tenant">
-                                            Add Tenant
+                                        <button type="submit" class="icon-action-link" title="Add Tenant" style="background: none; border: none; padding: 0; cursor: pointer;">
+                                            <i class="las la-plus-circle"></i>
                                         </button>
                                     </form>
                                     {% endif %}
                                     <form method="post" action="/connections/{{ connection.id }}/disconnect-all" style="margin: 0; display: inline;">
-                                        <button type="submit" class="action-btn btn-disconnect" title="Disconnect All" onclick="return confirm('Are you sure you want to disconnect all tenants? This will revoke access with Xero for all tenants.')">
-                                            Disconnect All
+                                        <button type="submit" class="icon-action-link danger" title="Disconnect All" onclick="return confirm('Are you sure you want to disconnect all tenants? This will revoke access with Xero for all tenants.')" style="background: none; border: none; padding: 0; cursor: pointer;">
+                                            <i class="las la-unlink"></i>
                                         </button>
                                     </form>
                                 {% else %}
-                                <a href="/connections/{{ connection.id }}/connect" class="action-btn btn-connect" title="Connect">
+                                <a href="/connections/{{ connection.id }}/connect" class="btn btn-primary" title="Connect" style="width: auto; height: auto; padding: 8px 16px; text-decoration: none;">
                                     Connect
                                 </a>
                                 <form method="post" action="/connections/{{ connection.id }}/delete" style="margin: 0; display: inline;">
-                                    <button type="submit" class="action-btn btn-disconnect" title="Delete" onclick="return confirm('Are you sure you want to delete this connection?')">
+                                    <button type="submit" class="btn btn-secondary" title="Delete" onclick="return confirm('Are you sure you want to delete this connection?')" style="width: auto; height: auto; padding: 8px 16px; background: #dc3545;">
                                         Delete
                                     </button>
                                 </form>
@@ -381,16 +497,17 @@
                             </div>
                         </div>
                         {% if connection.access_token and connection.get('tenants') %}
-                        <div class="tenants-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
-                            <h4 style="margin: 0 0 10px 0; font-size: 0.95em; color: #666;">Tenants:</h4>
+                        <div class="tenants-section" style="margin-top: 24px; padding-top: 20px; border-top: 0.6px solid #E0E0E0;">
+                            <h4 style="margin: 0 0 16px 0;">Tenants</h4>
                             <ul style="list-style: none; padding: 0; margin: 0;">
                                 {% for tenant in connection.get('tenants', []) %}
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 5px; background: #f8f9fa; border-radius: 4px;">
-                                    <span>{{ tenant.get('tenant_name', 'Unknown') }} ({{ tenant.get('tenant_id', '')[:8] }}...)</span>
-                                    <form method="post" action="/connections/{{ connection.id }}/remove-tenant" style="margin: 0; display: inline;">
+                                <li class="tenant-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; margin-bottom: 8px; background: #F5F6FA; border-radius: 8px; border: 0.3px solid #E0E0E0;">
+                                    <span style="font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-style: normal; font-weight: 600; font-size: 16px; line-height: 22px; color: #202224;">{{ tenant.get('tenant_name', 'Unknown') }}</span>
+                                    <span style="font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-style: normal; font-weight: 400; font-size: 14px; line-height: 19px; color: #606060; margin-left: 12px;">({{ tenant.get('tenant_id', '')[:8] }}...)</span>
+                                    <form method="post" action="/connections/{{ connection.id }}/remove-tenant" style="margin: 0 0 0 16px; display: inline;">
                                         <input type="hidden" name="tenant_id" value="{{ tenant.get('tenant_id') }}" />
-                                        <button type="submit" class="action-btn btn-disconnect" style="padding: 4px 12px; font-size: 0.85em;" title="Remove Tenant" onclick="return confirm('Are you sure you want to remove this tenant? This will disconnect it from Xero.')">
-                                            Remove
+                                        <button type="submit" class="remove-icon-link" title="Remove Tenant" onclick="return confirm('Are you sure you want to remove this tenant? This will disconnect it from Xero.')" style="background: none; border: none; padding: 0; cursor: pointer;">
+                                            <i class="las la-times-circle"></i>
                                         </button>
                                     </form>
                                 </li>
@@ -404,8 +521,8 @@
 
                 <!-- Add Connection Button for this category -->
                 <div style="margin-top: 15px;">
-                    <button class="add-connection-btn" data-category="{{ category_key }}" type="button">
-                        <span style="font-size: 1.2em; font-weight: bold;">+</span> Add Connection
+                    <button class="btn btn-primary" data-category="{{ category_key }}" type="button" style="width: auto; height: auto; padding: 8px 16px;">
+                        <i class="las la-plus-circle" style="margin-right: 8px;"></i> Add Connection
                     </button>
                 </div>
             </div>
@@ -416,24 +533,27 @@
     <div id="software-options-data" data-options='{{ software_options|tojson }}' style="display: none;"></div>
 
     <!-- Add Connection Modal -->
-    <div id="addConnectionModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
-        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-            <h3 style="margin-top: 0;">Add New Connection</h3>
+    <div id="addConnectionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Connection</h3>
+                <span class="close" onclick="if(window.closeAddConnectionModal){window.closeAddConnectionModal();}else{alert('Error: Function not loaded. Please refresh.');}">&times;</span>
+            </div>
             <form method="post" action="/connections/add" id="addConnectionForm">
                 <input type="hidden" name="category" id="modal-category" />
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Software:</label>
-                    <select name="software" id="modal-software" required style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+                <div class="form-group">
+                    <label for="modal-software">Software *</label>
+                    <select name="software" id="modal-software" required>
                         <option value="">Select software...</option>
                     </select>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Connection Name:</label>
-                    <input type="text" name="name" id="modal-name" required placeholder="e.g., Main Xero Account" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 1em;" />
+                <div class="form-group">
+                    <label for="modal-name">Connection Name *</label>
+                    <input type="text" name="name" id="modal-name" required placeholder="e.g., Main Xero Account" />
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
-                    <button type="button" onclick="if(window.closeAddConnectionModal){window.closeAddConnectionModal();}else{alert('Error: Function not loaded. Please refresh.');}" class="action-btn btn-cancel">Cancel</button>
-                    <button type="submit" class="action-btn btn-connect">Add & Connect</button>
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 30px;">
+                    <button type="button" onclick="if(window.closeAddConnectionModal){window.closeAddConnectionModal();}else{alert('Error: Function not loaded. Please refresh.');}" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add & Connect</button>
                 </div>
             </form>
         </div>
@@ -500,7 +620,7 @@
                     }
                 }
                 
-                modal.style.display = 'flex';
+                modal.style.display = 'block';
                 return true;
             } catch (e) {
                 alert('Error opening modal: ' + e.message);
@@ -593,12 +713,8 @@
         document.addEventListener('DOMContentLoaded', function() {
             // Handle clicks on "Add Connection" buttons using event delegation
             document.addEventListener('click', function(e) {
-                var button = findButtonWithClass(e.target, 'add-connection-btn');
-                if (!button && e.target.classList && e.target.classList.contains('add-connection-btn')) {
-                    button = e.target;
-                }
-                
-                if (button) {
+                var button = findButtonWithClass(e.target, 'btn-primary');
+                if (button && button.getAttribute('data-category')) {
                     e.preventDefault();
                     e.stopPropagation();
                     
@@ -647,6 +763,16 @@
                 }, false);
             }
         });
+        
+        // Close modal when clicking outside (global handler)
+        window.onclick = function(event) {
+            const modal = document.getElementById('addConnectionModal');
+            if (event.target == modal) {
+                if (window.closeAddConnectionModal) {
+                    window.closeAddConnectionModal();
+                }
+            }
+        }
         
     </script>
 {% endblock %}

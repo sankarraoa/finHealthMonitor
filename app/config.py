@@ -20,6 +20,14 @@ class Config:
     XERO_TOKEN_URL: str = "https://identity.xero.com/connect/token"
     XERO_API_BASE_URL: str = "https://api.xero.com/api.xro/2.0"
     
+    # QuickBooks OAuth 2.0 credentials
+    QUICKBOOKS_CLIENT_ID: str = os.getenv("QUICKBOOKS_CLIENT_ID", "")
+    QUICKBOOKS_CLIENT_SECRET: str = os.getenv("QUICKBOOKS_CLIENT_SECRET", "")
+    QUICKBOOKS_REDIRECT_URI: str = os.getenv("QUICKBOOKS_REDIRECT_URI", "http://localhost:8000/quickbooks/callback")
+    
+    # QuickBooks MCP Server path
+    QUICKBOOKS_MCP_SERVER_PATH: Optional[str] = os.getenv("QUICKBOOKS_MCP_SERVER_PATH", None)
+    
     # Session configuration
     SECRET_KEY: str = os.getenv("SECRET_KEY", os.urandom(32).hex())
     SESSION_COOKIE_NAME: str = "finhealth_session"

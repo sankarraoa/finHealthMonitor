@@ -52,6 +52,9 @@ templates.env.filters["tojson"] = tojson_filter
 # Initialize Xero client
 xero_client = XeroClient()
 
+# Initialize QuickBooks client
+quickbooks_client = QuickBooksClient()
+
 
 def get_connections_for_selector() -> Dict[str, Any]:
     """
@@ -177,17 +180,24 @@ async def get_selected_connection_and_tenant(
     # Refresh token if expired
     if connection_manager.is_token_expired(selected_connection["id"]):
         refresh_token = selected_connection.get("refresh_token")
+        software = selected_connection.get("software")
         if refresh_token:
             try:
                 # Run token refresh in thread pool to avoid blocking async event loop
                 import asyncio
-                token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
+                if software == "xero":
+                    token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
+                elif software == "quickbooks":
+                    token_response = await asyncio.to_thread(quickbooks_client.refresh_token, refresh_token)
+                else:
+                    raise ValueError(f"Unsupported software type for token refresh: {software}")
+                
                 connection_manager.sync_tokens_for_refresh_token(
                     refresh_token=refresh_token,
                     new_access_token=token_response.get("access_token"),
                     new_refresh_token=token_response.get("refresh_token", refresh_token),
                     expires_in=token_response.get("expires_in", 1800),
-                    software="xero"
+                    software=software
                 )
                 selected_connection = connection_manager.get_connection(selected_connection["id"])
                 logger.info(f"Successfully refreshed token for connection {selected_connection['id']}")
@@ -1338,6 +1348,17 @@ async def home(request: Request):
     )
 
 
+@app.get("/favorites", response_class=HTMLResponse)
+async def favorites(request: Request):
+    """Display favorites page."""
+    return templates.TemplateResponse(
+        "favorites.html",
+        {
+            "request": request
+        }
+    )
+
+
 async def _check_xero_connection_exists(connection: Dict[str, Any]) -> bool:
     """
     Check if a Xero connection still exists in Xero.
@@ -1688,8 +1709,11 @@ async def connect_connection(request: Request, connection_id: str):
                 return RedirectResponse(url="/settings?error=Xero client ID is not configured. Please check your environment variables.")
             auth_url = xero_client.get_authorization_url(state=state)
         elif software == "quickbooks":
-            # QuickBooks integration is under construction
-            return RedirectResponse(url="/settings?error=QuickBooks integration is currently under construction. Please check back soon!")
+            # Validate client_id before generating URL
+            if not quickbooks_client.client_id:
+                logger.error("QUICKBOOKS_CLIENT_ID is not set when connecting connection")
+                return RedirectResponse(url="/settings?error=QuickBooks client ID is not configured. Please check your environment variables.")
+            auth_url = quickbooks_client.get_authorization_url(state=state)
         else:
             return RedirectResponse(url="/settings?error=Unsupported software type")
         
@@ -1841,8 +1865,8 @@ async def refresh_connection(request: Request, connection_id: str):
             import asyncio
             token_response = await asyncio.to_thread(xero_client.refresh_token, refresh_token)
         elif software == "quickbooks":
-            # QuickBooks integration is under construction
-            return RedirectResponse(url="/settings?error=QuickBooks integration is currently under construction. Please check back soon!")
+            import asyncio
+            token_response = await asyncio.to_thread(quickbooks_client.refresh_token, refresh_token)
         else:
             return RedirectResponse(url="/settings?error=Unsupported software type")
         
@@ -2207,22 +2231,35 @@ async def callback_software(request: Request, software: str, code: Optional[str]
     
     # Check for errors
     if error:
-        logger.error(f"=== OAUTH ERROR FROM XERO (SOFTWARE ROUTE) ===")
+        logger.error(f"=== OAUTH ERROR FROM {software.upper()} (SOFTWARE ROUTE) ===")
         logger.error(f"OAuth error for {software}: {error}")
         logger.error(f"Error description: {request.query_params.get('error_description', 'Not provided')}")
         logger.error(f"Full error params: {dict(request.query_params)}")
         logger.error(f"Request URL: {request.url}")
         
-        # If error is invalid_request or invalid_client_id, provide detailed debugging info
-        if error in ["invalid_request", "invalid_client"]:
-            logger.error(f"=== INVALID CLIENT_ID ERROR - DEBUGGING INFO ===")
-            logger.error(f"Client ID being used: {xero_client.client_id}")
-            logger.error(f"Client ID length: {len(xero_client.client_id) if xero_client.client_id else 0}")
-            logger.error(f"Redirect URI being used: {xero_client.redirect_uri}")
-            logger.error(f"Please check Xero Developer Portal (https://developer.xero.com/myapps):")
-            logger.error(f"  1. Client ID must match exactly: {xero_client.client_id}")
-            logger.error(f"  2. Redirect URI must match exactly: {xero_client.redirect_uri}")
-            logger.error(f"  3. No trailing slashes, exact case, exact protocol (http vs https)")
+        # Provide detailed debugging info based on software type
+        if software == "xero":
+            if error in ["invalid_request", "invalid_client"]:
+                logger.error(f"=== INVALID CLIENT_ID ERROR - DEBUGGING INFO ===")
+                logger.error(f"Client ID being used: {xero_client.client_id}")
+                logger.error(f"Client ID length: {len(xero_client.client_id) if xero_client.client_id else 0}")
+                logger.error(f"Redirect URI being used: {xero_client.redirect_uri}")
+                logger.error(f"Please check Xero Developer Portal (https://developer.xero.com/myapps):")
+                logger.error(f"  1. Client ID must match exactly: {xero_client.client_id}")
+                logger.error(f"  2. Redirect URI must match exactly: {xero_client.redirect_uri}")
+                logger.error(f"  3. No trailing slashes, exact case, exact protocol (http vs https)")
+        elif software == "quickbooks":
+            logger.error(f"=== QUICKBOOKS OAUTH ERROR - DEBUGGING INFO ===")
+            logger.error(f"Client ID being used: {quickbooks_client.client_id}")
+            logger.error(f"Client ID length: {len(quickbooks_client.client_id) if quickbooks_client.client_id else 0}")
+            logger.error(f"Redirect URI being used: {quickbooks_client.redirect_uri}")
+            logger.error(f"Environment: {quickbooks_client.environment}")
+            logger.error(f"Please check QuickBooks Developer Portal (https://developer.intuit.com/app/developer/dashboard):")
+            logger.error(f"  1. Client ID must match exactly: {quickbooks_client.client_id}")
+            logger.error(f"  2. Redirect URI must match exactly: {quickbooks_client.redirect_uri}")
+            logger.error(f"  3. Make sure redirect URI is added in Settings > Redirect URIs")
+            logger.error(f"  4. Environment must match (sandbox vs production)")
+            logger.error(f"  5. No trailing slashes, exact case, exact protocol (http vs https)")
         
         return RedirectResponse(url=f"/settings?error=Authentication failed: {error}. Check server logs for details.")
     
@@ -2645,14 +2682,124 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                 return RedirectResponse(url="/settings?reconnected=true", status_code=303)
             
         elif software == "quickbooks":
-            # QuickBooks integration is under construction
-            # Clear OAuth state and pending connection
-            request.session.pop("oauth_state", None)
-            request.session.pop("pending_connection_id", None)
-            request.session.pop("pending_software", None)
+            import asyncio
+            logger.info("=== STEP 1: QUICKBOOKS TOKEN EXCHANGE ===")
+            logger.info(f"Calling quickbooks_client.get_access_token() with code length: {len(code) if code else 0}")
+            logger.info(f"Code preview: {code[:20] + '...' if code and len(code) > 20 else code}")
+            logger.info(f"Redirect URI: {quickbooks_client.redirect_uri}")
+            logger.info(f"Token URL: {quickbooks_client.token_url}")
             
-            logger.info(f"QuickBooks connection attempted but not yet implemented: {connection_id}")
-            return RedirectResponse(url="/settings?error=QuickBooks integration is currently under construction. Please check back soon!", status_code=303)
+            try:
+                token_response = await asyncio.to_thread(quickbooks_client.get_access_token, code)
+                logger.info("=== TOKEN EXCHANGE COMPLETED ===")
+                logger.info(f"Token response keys: {list(token_response.keys()) if token_response else 'None'}")
+                logger.info(f"Token response preview: {str(token_response)[:200] if token_response else 'None'}...")
+            except Exception as token_error:
+                logger.error(f"=== TOKEN EXCHANGE FAILED ===")
+                logger.error(f"Error type: {type(token_error).__name__}")
+                logger.error(f"Error message: {str(token_error)}", exc_info=True)
+                raise
+            
+            access_token = token_response.get("access_token")
+            refresh_token = token_response.get("refresh_token")
+            realm_id = token_response.get("realmId")  # QuickBooks returns realmId in token response
+            expires_in = token_response.get("expires_in", 3600)  # QuickBooks tokens typically last 1 hour
+            
+            logger.info(f"=== TOKEN EXTRACTION ===")
+            logger.info(f"Access token present: {bool(access_token)}")
+            logger.info(f"Access token length: {len(access_token) if access_token else 0}")
+            logger.info(f"Refresh token present: {bool(refresh_token)}")
+            logger.info(f"Refresh token length: {len(refresh_token) if refresh_token else 0}")
+            logger.info(f"Realm ID: {realm_id}")
+            logger.info(f"Expires in: {expires_in} seconds")
+            
+            if not access_token:
+                logger.error("=== ERROR: NO ACCESS TOKEN IN RESPONSE ===")
+                logger.error(f"Full token response: {token_response}")
+                raise ValueError("No access token in response")
+            
+            if not realm_id:
+                logger.error("=== ERROR: NO REALM ID IN RESPONSE ===")
+                logger.error(f"Full token response: {token_response}")
+                raise ValueError("No realm ID in response")
+            
+            # Get pending connection
+            pending_connection = connection_manager.get_connection(connection_id)
+            if not pending_connection:
+                return RedirectResponse(url="/settings?error=Connection not found")
+            
+            connection_name = pending_connection.get("name", "QuickBooks Connection")
+            category = pending_connection.get("category", "finance")
+            
+            # Check if a connection with the same refresh_token already exists
+            existing_connection = connection_manager.get_connection_by_refresh_token(refresh_token, software="quickbooks")
+            
+            if existing_connection:
+                # Update existing connection with new tokens
+                logger.info("=== UPDATING EXISTING QUICKBOOKS CONNECTION ===")
+                existing_connection_id = existing_connection.get("id")
+                
+                connection_manager.update_connection(
+                    existing_connection_id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_in=expires_in,
+                    metadata={"realm_id": realm_id}
+                )
+                
+                # Delete the pending placeholder connection
+                if pending_connection:
+                    try:
+                        connection_manager.delete_connection(connection_id)
+                        logger.info(f"Deleted placeholder connection: {connection_id}")
+                    except:
+                        pass
+                
+                # Clear OAuth state
+                request.session.pop("oauth_state", None)
+                request.session.pop("pending_connection_id", None)
+                request.session.pop("pending_software", None)
+                
+                logger.info(f"Successfully updated QuickBooks connection {existing_connection_id}")
+                return RedirectResponse(url="/settings?reconnected=true", status_code=303)
+            else:
+                # Create new connection
+                logger.info("=== CREATING NEW QUICKBOOKS CONNECTION ===")
+                logger.info(f"Connection name: {connection_name}")
+                logger.info(f"Category: {category}")
+                logger.info(f"Realm ID: {realm_id}")
+                
+                # QuickBooks doesn't use tenants like Xero, so we use an empty tenants array
+                # and store realm_id in metadata
+                new_connection_id = connection_manager.add_connection(
+                    category=category,
+                    software="quickbooks",
+                    name=connection_name,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_in=expires_in,
+                    metadata={"realm_id": realm_id},
+                    tenants=[]  # QuickBooks doesn't have multiple tenants
+                )
+                
+                logger.info(f"=== CONNECTION CREATED SUCCESSFULLY ===")
+                logger.info(f"New connection ID: {new_connection_id}")
+                
+                # Delete the pending placeholder connection
+                if pending_connection:
+                    try:
+                        connection_manager.delete_connection(connection_id)
+                        logger.info(f"Deleted placeholder connection: {connection_id}")
+                    except:
+                        pass
+                
+                # Clear OAuth state
+                request.session.pop("oauth_state", None)
+                request.session.pop("pending_connection_id", None)
+                request.session.pop("pending_software", None)
+                
+                logger.info(f"Successfully authenticated QuickBooks")
+                return RedirectResponse(url="/settings?reconnected=true", status_code=303)
         
         else:
             # Clear OAuth state and pending connection

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FinHealthMonitor{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .main-content {
+            display: flex;
+            flex: 1;
+            margin-top: 0;
+        }
+        .sidebar {
+            width: 280px;
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            padding: 20px 0;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar-section {
+            margin-bottom: 30px;
+        }
+        .sidebar-section-title {
+            padding: 10px 20px;
+            font-weight: 600;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            color: #6c757d;
+            letter-spacing: 0.5px;
+        }
+        .sidebar-menu-item {
+            display: block;
+            padding: 10px 20px;
+            color: #333;
+            text-decoration: none;
+            transition: background-color 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+        .sidebar-menu-item:hover {
+            background-color: #e9ecef;
+        }
+        .sidebar-menu-item.active {
+            background-color: #e7f3ff;
+            border-left-color: #007bff;
+            color: #007bff;
+            font-weight: 500;
+        }
+        .content-area {
+            flex: 1;
+            padding: 20px 30px;
+            overflow-y: auto;
+            background: #ffffff;
+        }
+        .logout-link {
+            color: #6c757d;
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: color 0.2s ease;
+        }
+        .logout-link:hover {
+            color: #dc3545;
+            text-decoration: underline;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <h1>FinHealthMonitor</h1>
+            <div class="header-actions">
+                <a href="/logout" class="logout-link">Logout</a>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <nav class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Home</div>
+                    <a href="/home" class="sidebar-menu-item" id="nav-dashboard">Dashboard</a>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Financial Health</div>
+                    <a href="/financial-health/revenue-concentration-risk" class="sidebar-menu-item" id="nav-revenue-risk">Revenue Concentration Risk</a>
+                    <a href="/financial-health/margin-drift" class="sidebar-menu-item" id="nav-margin-drift">Margin Drift</a>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Cash Flow Advisory</div>
+                    <a href="/payroll-risk" class="sidebar-menu-item" id="nav-payroll-risk">Payroll Risk</a>
+                    <a href="/cash-flow-advisory/cash-strain" class="sidebar-menu-item" id="nav-cash-strain">Cash Strain</a>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Profitability and Cost Analysis</div>
+                    <a href="/profitability/expense-creep" class="sidebar-menu-item" id="nav-expense-creep">Expense Creep</a>
+                    <a href="/profitability/customer-profitability" class="sidebar-menu-item" id="nav-customer-profitability">Customer Level Profitability</a>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Tax Planning and Projection</div>
+                    <a href="/tax-planning/tax-liability" class="sidebar-menu-item" id="nav-tax-liability">Tax Liability</a>
+                    <a href="/tax-planning/capital-purchase-timing" class="sidebar-menu-item" id="nav-capital-timing">Capital Purchase Timing</a>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Settings</div>
+                    <a href="/connections" class="sidebar-menu-item" id="nav-connections">Connections</a>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Others</div>
+                    <a href="/accounts" class="sidebar-menu-item" id="nav-accounts">Chart of Accounts</a>
+                    <a href="/invoices" class="sidebar-menu-item" id="nav-invoices">Outstanding Invoices</a>
+                    <a href="/manual-journals" class="sidebar-menu-item" id="nav-manual-journals">Manual Journals</a>
+                    <a href="/bank-transactions" class="sidebar-menu-item" id="nav-bank-transactions">Bank Transactions</a>
+                </div>
+            </nav>
+
+            <main class="content-area">
+                {% if error %}
+                <div class="error-message">
+                    <strong>Error:</strong> {{ error }}
+                </div>
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/js/connection-selector.js"></script>
+    <script src="/static/js/main.js"></script>
+    <script>
+        // Set active menu item based on current path
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentPath = window.location.pathname;
+            const menuItems = document.querySelectorAll('.sidebar-menu-item');
+            
+            menuItems.forEach(item => {
+                const itemPath = new URL(item.href).pathname;
+                // Exact path match or special redirect cases
+                if (currentPath === itemPath || 
+                    (currentPath === '/' && itemPath === '/home') ||
+                    (currentPath === '/settings' && itemPath === '/connections')) {
+                    item.classList.add('active');
+                }
+            });
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

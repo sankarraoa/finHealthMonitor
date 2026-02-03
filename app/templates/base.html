@@ -4,59 +4,831 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}FinHealthMonitor{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.0">
     <style>
         .app-container {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             min-height: 100vh;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .content-wrapper {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
         }
         .main-content {
             display: flex;
             flex: 1;
-            margin-top: 0;
+            flex-direction: column;
+            overflow: hidden;
         }
         .sidebar {
             width: 280px;
-            background: #f8f9fa;
-            border-right: 1px solid #dee2e6;
-            padding: 20px 0;
+            background: #FFFFFF;
+            border-right: 1px solid #E0E0E0;
+            padding: 0;
             overflow-y: auto;
             flex-shrink: 0;
+            height: 100vh;
+            transition: transform 0.3s ease, width 0.3s ease;
+        }
+        .sidebar-logo {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            padding: 25px 0 30px 0;
+        }
+        .sidebar-logo-text {
+            width: 100%;
+            height: 27px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 600;
+            font-size: 35px;
+            line-height: 27px;
+            text-align: center;
+        }
+        .sidebar-logo-text .logo-get {
+            color: #4880FF;
+        }
+        .sidebar-logo-text .logo-go {
+            color: #3749A6;
+        }
+        .sidebar.hidden {
+            transform: translateX(-100%);
+            width: 0;
+            overflow: hidden;
         }
         .sidebar-section {
-            margin-bottom: 30px;
+            margin-bottom: 0;
         }
         .sidebar-section-title {
-            padding: 10px 20px;
-            font-weight: 600;
-            font-size: 0.85em;
+            width: 100%;
+            height: 16px;
+            padding: 0 0 0 40px;
+            margin: 15px 0 0 0;
+            display: flex;
+            align-items: center;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 700;
+            font-size: 12px;
+            line-height: 16px;
+            letter-spacing: 0.257143px;
+            color: #202224;
+            mix-blend-mode: normal;
+            opacity: 0.6;
             text-transform: uppercase;
-            color: #6c757d;
-            letter-spacing: 0.5px;
+        }
+        .sidebar-divider {
+            height: 0;
+            border-top: 0.6px solid #E0E0E0;
+            margin: 15px 0 15px 0;
+            width: 100%;
         }
         .sidebar-menu-item {
-            display: block;
-            padding: 10px 20px;
-            color: #333;
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 50px;
+            padding: 0 0 0 40px;
+            margin: 0;
+            gap: 12px;
+            color: #202224;
             text-decoration: none;
             transition: background-color 0.2s ease;
-            border-left: 3px solid transparent;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 500;
+            font-size: 14px;
+            line-height: 19px;
+            letter-spacing: 0.3px;
+            box-sizing: border-box;
+        }
+        .sidebar-section-title + .sidebar-menu-item {
+            margin-top: 15px;
         }
         .sidebar-menu-item:hover {
-            background-color: #e9ecef;
+            background-color: #F5F6FA;
         }
         .sidebar-menu-item.active {
-            background-color: #e7f3ff;
-            border-left-color: #007bff;
-            color: #007bff;
-            font-weight: 500;
+            background-color: #667eea;
+            color: #FFFFFF;
+            font-weight: 600;
+        }
+        .sidebar-menu-item.active .sidebar-menu-icon {
+            stroke: #FFFFFF;
+        }
+        .sidebar-menu-item.active .sidebar-menu-icon circle,
+        .sidebar-menu-item.active .sidebar-menu-icon rect,
+        .sidebar-menu-item.active .sidebar-menu-icon line {
+            stroke: #FFFFFF;
+            fill: #FFFFFF;
+        }
+        .sidebar-menu-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            font-size: 20px;
+            line-height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #202224;
+        }
+        .sidebar-menu-item.active .sidebar-menu-icon {
+            color: #FFFFFF;
         }
         .content-area {
             flex: 1;
             padding: 20px 30px;
             overflow-y: auto;
-            background: #ffffff;
+            background: #F5F6FA;
+            height: 100%;
+        }
+        /* Main Content Typography */
+        .main-content h1,
+        .main-content h2,
+        .main-content h3,
+        .main-content h4,
+        .content-area h1,
+        .content-area h2,
+        .content-area h3,
+        .content-area h4,
+        .content-section h1,
+        .content-section h2,
+        .content-section h3,
+        .content-section h4 {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            color: #202224;
+            margin: 0;
+        }
+        .main-content h1,
+        .content-area h1,
+        .content-section h1 {
+            height: 52px;
+            font-size: 36px;
+            line-height: 52px;
+            letter-spacing: -0.128571px;
+        }
+        .main-content h2,
+        .content-area h2,
+        .content-section h2 {
+            height: 44px;
+            font-size: 32px;
+            line-height: 44px;
+            letter-spacing: -0.114286px;
+        }
+        .main-content h3,
+        .content-area h3,
+        .content-section h3 {
+            height: 36px;
+            font-size: 28px;
+            line-height: 36px;
+            letter-spacing: -0.1px;
+        }
+        .main-content h4,
+        .content-area h4,
+        .content-section h4 {
+            height: 30px;
+            font-size: 24px;
+            line-height: 30px;
+            letter-spacing: -0.085714px;
+        }
+        /* Regular Text in Main Content */
+        .content-area p,
+        .content-area .regular-text,
+        .content-section p,
+        .content-section .regular-text {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 400;
+            font-size: 14px;
+            line-height: 26px;
+            letter-spacing: 0.1px;
+            color: #202224;
+            mix-blend-mode: normal;
+            opacity: 0.95;
+        }
+        /* Labels keep the previous styling */
+        .content-area label,
+        .content-section label {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 600;
+            font-size: 16px;
+            line-height: 22px;
+            color: #404040;
+        }
+        /* Button Styles */
+        .btn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 700;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        .btn-primary {
+            width: 238px;
+            height: 43px;
+            background: #4880FF;
+            mix-blend-mode: normal;
+            opacity: 0.9;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 19px;
+            text-align: center;
+            letter-spacing: -0.05px;
+            color: #FFFFFF;
+        }
+        .btn-primary:hover {
+            opacity: 1;
+        }
+        .btn-secondary {
+            position: relative;
+            width: 129px;
+            height: 36px;
+            background: #4880FF;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 16px;
+            text-align: right;
+            padding-right: 16px;
+            color: #FFFFFF;
+        }
+        .btn-secondary::before {
+            content: '';
+            position: absolute;
+            left: 32.56%;
+            right: 32.56%;
+            top: 86.11%;
+            bottom: 0%;
+            background: #4880FF;
+            mix-blend-mode: normal;
+            opacity: 0.48;
+            filter: blur(8.15485px);
+            border-radius: 2px;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .btn-secondary:hover {
+            opacity: 0.95;
+        }
+        /* Table Styles */
+        .analyses-table,
+        .accounts-table,
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            box-sizing: border-box;
+            background: #FFFFFF;
+            border: 0.3px solid #B9B9B9;
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        .analyses-table thead,
+        .accounts-table thead,
+        table thead {
+            background: #FCFDFD;
+        }
+        .analyses-table thead tr:first-child th:first-child,
+        .accounts-table thead tr:first-child th:first-child,
+        table thead tr:first-child th:first-child {
+            border-top-left-radius: 14px;
+        }
+        .analyses-table thead tr:first-child th:last-child,
+        .accounts-table thead tr:first-child th:last-child,
+        table thead tr:first-child th:last-child {
+            border-top-right-radius: 14px;
+        }
+        .analyses-table th,
+        .accounts-table th,
+        table th {
+            padding: 15px;
+            text-align: left;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-size: 14px;
+            line-height: 19px;
+            color: #202224;
+            mix-blend-mode: normal;
+            opacity: 0.9;
+            border-bottom: 0.6px solid #D5D5D5;
+            border-top: 0.6px solid #D5D5D5;
+            font-weight: normal;
+            text-transform: none;
+        }
+        .analyses-table thead th:first-child,
+        .accounts-table thead th:first-child,
+        table thead th:first-child {
+            border-left: 0.6px solid #D5D5D5;
+        }
+        .analyses-table thead th:last-child,
+        .accounts-table thead th:last-child,
+        table thead th:last-child {
+            border-right: 0.6px solid #D5D5D5;
+        }
+        .analyses-table tbody tr,
+        .accounts-table tbody tr,
+        table tbody tr {
+            position: relative;
+        }
+        .analyses-table tbody tr:not(:last-child)::after,
+        .accounts-table tbody tr:not(:last-child)::after,
+        table tbody tr:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-bottom: 0.4px solid #979797;
+            mix-blend-mode: normal;
+            opacity: 0.6;
+        }
+        .analyses-table td,
+        .accounts-table td,
+        table td {
+            padding: 15px;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-size: 14px;
+            line-height: 19px;
+            color: #202224;
+            mix-blend-mode: normal;
+            opacity: 0.9;
+            border-bottom: none;
+        }
+        .analyses-table td.row-text-bold,
+        .accounts-table td.row-text-bold,
+        table td.row-text-bold {
+            font-weight: 600;
+        }
+        .analyses-table tbody tr:hover,
+        .accounts-table tbody tr:hover,
+        table tbody tr:hover {
+            background: #F5F6FA;
+            cursor: pointer;
+        }
+        .analyses-table tbody tr:last-child td,
+        .accounts-table tbody tr:last-child td,
+        table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        /* Status Badge Styles */
+        .status-badge {
+            position: relative;
+            display: inline-block;
+            padding: 0;
+            border-radius: 4.5px;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 700;
+            font-size: 12px;
+            line-height: 27px;
+            height: 27px;
+            min-width: 80px;
+            text-align: center;
+            overflow: hidden;
+        }
+        .status-badge::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            border-radius: 4.5px;
+            mix-blend-mode: normal;
+            opacity: 0.2;
+            z-index: 0;
+        }
+        .status-badge span {
+            position: relative;
+            z-index: 1;
+            padding: 0 12px;
+            display: inline-block;
+            height: 16px;
+            line-height: 16px;
+        }
+        /* Status Colors */
+        .status-badge.status-completed,
+        .status-badge.status-complete {
+            color: #00B69B;
+        }
+        .status-badge.status-completed::before,
+        .status-badge.status-complete::before {
+            background: #00B69B;
+        }
+        .status-badge.status-running,
+        .status-badge.status-processing,
+        .status-badge.status-in-progress {
+            color: #6226EF;
+        }
+        .status-badge.status-running::before,
+        .status-badge.status-processing::before,
+        .status-badge.status-in-progress::before {
+            background: #6226EF;
+        }
+        .status-badge.status-failed,
+        .status-badge.status-rejected,
+        .status-badge.status-error {
+            color: #EF4444;
+        }
+        .status-badge.status-failed::before,
+        .status-badge.status-rejected::before,
+        .status-badge.status-error::before {
+            background: #EF4444;
+        }
+        .status-badge.status-onhold,
+        .status-badge.status-on-hold,
+        .status-badge.status-in-transit {
+            color: #FFA756;
+        }
+        .status-badge.status-onhold::before,
+        .status-badge.status-on-hold::before,
+        .status-badge.status-in-transit::before {
+            background: #FFA756;
+        }
+        /* Legacy status badge support */
+        .status-active {
+            color: #00B69B;
+        }
+        .status-active::before {
+            background: #00B69B;
+        }
+        .status-archived {
+            color: #6226EF;
+        }
+        .status-archived::before {
+            background: #6226EF;
+        }
+        .status-deleted {
+            color: #EF4444;
+        }
+        .status-deleted::before {
+            background: #EF4444;
+        }
+        .status-authorised {
+            color: #FFA756;
+        }
+        .status-authorised::before {
+            background: #FFA756;
+        }
+        .status-paid {
+            color: #00B69B;
+        }
+        .status-paid::before {
+            background: #00B69B;
+        }
+        .status-voided {
+            color: #EF4444;
+        }
+        .status-voided::before {
+            background: #EF4444;
+        }
+        .status-draft {
+            color: #6226EF;
+        }
+        .status-draft::before {
+            background: #6226EF;
+        }
+        /* Pagination Control */
+        .pagination-control {
+            display: flex;
+            width: 90px;
+            height: 30px;
+            margin: 20px 0 0 auto;
+            background: #F5F6FA;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 1px solid #E0E0E0;
+        }
+        .pagination-control button {
+            flex: 1;
+            background: transparent;
+            border: none;
+            padding: 0;
+            height: 100%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+            position: relative;
+        }
+        .pagination-control button:first-child {
+            border-right: 1px solid #E0E0E0;
+        }
+        .pagination-control button:hover:not(:disabled) {
+            background: #E9ECEF;
+        }
+        .pagination-control button:active:not(:disabled) {
+            background: #DEE2E6;
+        }
+        .pagination-control button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .pagination-control svg {
+            width: 20px;
+            height: 20px;
+            stroke: #202224;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+        /* Summary Stats */
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #FFFFFF;
+            box-shadow: 6px 6px 54px rgba(0, 0, 0, 0.05);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: left;
+        }
+        .stat-card-primary {
+            background: #FFFFFF;
+            box-shadow: 6px 6px 54px rgba(0, 0, 0, 0.05);
+            border-radius: 14px;
+        }
+        .stat-label {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 400;
+            font-size: 16px;
+            line-height: 22px;
+            color: #202224;
+            mix-blend-mode: normal;
+            opacity: 0.7;
+            padding-left: 12px;
+            margin-bottom: 15px;
+        }
+        .stat-value {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 600;
+            font-size: 28px;
+            line-height: 38px;
+            letter-spacing: 1px;
+            color: #202224;
+            padding-left: 12px;
+        }
+        .stat-card-primary .stat-label {
+            opacity: 0.7;
+        }
+        .stat-card-primary .stat-value {
+            color: #202224;
+        }
+        /* Risk Level Card */
+        .risk-level-card {
+            background: #FFFFFF;
+            box-shadow: 6px 6px 54px rgba(0, 0, 0, 0.05);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .risk-level-indicator {
+            width: 64px;
+            height: 64px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 32px;
+        }
+        .risk-level-card.risk-green .risk-level-indicator {
+            background: rgba(0, 182, 155, 0.15);
+        }
+        .risk-level-card.risk-yellow .risk-level-indicator {
+            background: rgba(255, 167, 86, 0.15);
+        }
+        .risk-level-card.risk-red .risk-level-indicator {
+            background: rgba(239, 68, 68, 0.15);
+        }
+        .risk-level-content {
+            flex: 1;
+        }
+        .risk-level-label {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 400;
+            font-size: 14px;
+            line-height: 19px;
+            color: #606060;
+            margin-bottom: 8px;
+        }
+        .risk-level-value {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 700;
+            font-size: 24px;
+            line-height: 33px;
+            letter-spacing: 0.3px;
+        }
+        .risk-level-card.risk-green .risk-level-value {
+            color: #00B69B;
+        }
+        .risk-level-card.risk-yellow .risk-level-value {
+            color: #FFA756;
+        }
+        .risk-level-card.risk-red .risk-level-value {
+            color: #EF4444;
+        }
+        .risk-level-near-miss {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-weight: 400;
+            font-size: 14px;
+            line-height: 19px;
+            color: #606060;
+            margin-top: 8px;
+        }
+        /* Progress Container */
+        .progress-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+        .progress-fill span {
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 0.9em;
+        }
+        /* Skeleton Loading Table */
+        .skeleton-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: #FFFFFF;
+            border: 0.3px solid #B9B9B9;
+            border-radius: 14px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+        .skeleton-table thead {
+            background: #FCFDFD;
+            border-bottom: 0.6px solid #D5D5D5;
+        }
+        .skeleton-table th {
+            padding: 16px 20px;
+            text-align: left;
+            font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-style: normal;
+            font-size: 14px;
+            line-height: 19px;
+            color: #202224;
+            opacity: 0.9;
+        }
+        .skeleton-table tbody tr {
+            border-bottom: 0.4px solid #979797;
+            opacity: 0.6;
+        }
+        .skeleton-table tbody tr:last-child {
+            border-bottom: none;
+        }
+        .skeleton-table tbody tr:hover {
+            background: transparent;
+        }
+        .skeleton-cell {
+            padding: 16px 20px;
+            height: 19px;
+            position: relative;
+            overflow: hidden;
+        }
+        .skeleton-shimmer {
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(255, 255, 255, 0.4) 50%,
+                transparent 100%
+            );
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer {
+            0% {
+                left: -100%;
+            }
+            100% {
+                left: 100%;
+            }
+        }
+        .skeleton-bar {
+            height: 12px;
+            background: #E0E0E0;
+            border-radius: 4px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        .skeleton-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(255, 255, 255, 0.6) 50%,
+                transparent 100%
+            );
+            animation: shimmer 1.5s infinite;
+        }
+        .skeleton-bar.short {
+            width: 60%;
+        }
+        .skeleton-bar.medium {
+            width: 80%;
+        }
+        .skeleton-badge {
+            display: inline-block;
+            height: 24px;
+            width: 80px;
+            background: #E0E0E0;
+            border-radius: 4.5px;
+            position: relative;
+            overflow: hidden;
+        }
+        .skeleton-badge::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(255, 255, 255, 0.6) 50%,
+                transparent 100%
+            );
+            animation: shimmer 1.5s infinite;
+        }
+        .loading-overlay {
+            position: relative;
+        }
+        .loading-overlay::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.7);
+            z-index: 1;
+            pointer-events: none;
         }
         .logout-link {
             color: #6c757d;
@@ -73,67 +845,172 @@
 </head>
 <body>
     <div class="app-container">
-        <header class="header">
-            <h1>FinHealthMonitor</h1>
-            <div class="header-actions">
-                <a href="/logout" class="logout-link">Logout</a>
+        <nav class="sidebar">
+                <div class="sidebar-logo">
+                    <span class="sidebar-logo-text">
+                        <span class="logo-get">get</span><span class="logo-go">Go</span>
+                    </span>
+                </div>
+                <div class="sidebar-section">
+                    <a href="/home" class="sidebar-menu-item" id="nav-dashboard">
+                        <i class="las la-clock sidebar-menu-icon"></i>
+                        Dashboard
+                    </a>
+                    <a href="/favorites" class="sidebar-menu-item" id="nav-favorites">
+                        <i class="las la-heart sidebar-menu-icon"></i>
+                        Favorites
+                    </a>
+                </div>
+
+                <div class="sidebar-divider"></div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Financial Health</div>
+                <a href="/financial-health/revenue-concentration-risk" class="sidebar-menu-item" id="nav-revenue-risk">
+                    <i class="las la-dollar-sign sidebar-menu-icon"></i>
+                    Revenue Concentration Risk
+                </a>
+                <a href="/financial-health/margin-drift" class="sidebar-menu-item" id="nav-margin-drift">
+                    <i class="las la-chart-line sidebar-menu-icon"></i>
+                    Margin Drift
+                </a>
             </div>
-        </header>
 
-        <div class="main-content">
-            <nav class="sidebar">
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Home</div>
-                    <a href="/home" class="sidebar-menu-item" id="nav-dashboard">Dashboard</a>
+            <div class="sidebar-divider"></div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Cash Flow Advisory</div>
+                <a href="/payroll-risk" class="sidebar-menu-item" id="nav-payroll-risk">
+                    <i class="las la-clock sidebar-menu-icon"></i>
+                    Payroll Risk
+                </a>
+                <a href="/cash-flow-advisory/cash-strain" class="sidebar-menu-item" id="nav-cash-strain">
+                    <i class="las la-exclamation-circle sidebar-menu-icon"></i>
+                    Cash Strain
+                </a>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Profitability and Cost Analysis</div>
+                <a href="/profitability/expense-creep" class="sidebar-menu-item" id="nav-expense-creep">
+                    <i class="las la-arrow-up sidebar-menu-icon"></i>
+                    Expense Creep
+                </a>
+                <a href="/profitability/customer-profitability" class="sidebar-menu-item" id="nav-customer-profitability">
+                    <i class="las la-users sidebar-menu-icon"></i>
+                    Customer Level Profitability
+                </a>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Tax Planning and Projection</div>
+                <a href="/tax-planning/tax-liability" class="sidebar-menu-item" id="nav-tax-liability">
+                    <i class="las la-file-invoice-dollar sidebar-menu-icon"></i>
+                    Tax Liability
+                </a>
+                <a href="/tax-planning/capital-purchase-timing" class="sidebar-menu-item" id="nav-capital-timing">
+                    <i class="las la-calendar-alt sidebar-menu-icon"></i>
+                    Capital Purchase Timing
+                </a>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Settings</div>
+                <a href="/connections" class="sidebar-menu-item" id="nav-connections">
+                    <i class="las la-cog sidebar-menu-icon"></i>
+                    Connections
+                </a>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Others</div>
+                <a href="/accounts" class="sidebar-menu-item" id="nav-accounts">
+                    <i class="las la-chart-bar sidebar-menu-icon"></i>
+                    Chart of Accounts
+                </a>
+                <a href="/invoices" class="sidebar-menu-item" id="nav-invoices">
+                    <i class="las la-file-invoice sidebar-menu-icon"></i>
+                    Outstanding Invoices
+                </a>
+                <a href="/manual-journals" class="sidebar-menu-item" id="nav-manual-journals">
+                    <i class="las la-book sidebar-menu-icon"></i>
+                    Manual Journals
+                </a>
+                <a href="/bank-transactions" class="sidebar-menu-item" id="nav-bank-transactions">
+                    <i class="las la-credit-card sidebar-menu-icon"></i>
+                    Bank Transactions
+                </a>
+            </div>
+        </nav>
+
+        <div class="content-wrapper">
+            <header class="header">
+                <div class="header-left">
+                    <button class="header-menu-icon" aria-label="Menu">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 6H19M3 11H19M3 16H19" stroke="#202224" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                    
+                    <div class="header-search">
+                        <svg class="header-search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="7" cy="7" r="5" stroke="#202224" stroke-width="1.2" transform="rotate(-23.02 7 7)"/>
+                            <path d="M11 11L14 14" stroke="#202224" stroke-width="1.2" stroke-linecap="round"/>
+                        </svg>
+                        <input type="text" class="header-search-input" placeholder="Search" aria-label="Search">
+                    </div>
                 </div>
-
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Financial Health</div>
-                    <a href="/financial-health/revenue-concentration-risk" class="sidebar-menu-item" id="nav-revenue-risk">Revenue Concentration Risk</a>
-                    <a href="/financial-health/margin-drift" class="sidebar-menu-item" id="nav-margin-drift">Margin Drift</a>
+                
+                <div class="header-profile-container">
+                    <div class="header-profile" id="headerProfile">
+                        <div class="header-profile-avatar">
+                            <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop&crop=face" alt="Veda Valli avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div class="header-profile-avatar-fallback" style="display: none;">VV</div>
+                        </div>
+                        <div class="header-profile-info">
+                            <div class="header-profile-name">Veda Valli</div>
+                            <div class="header-profile-role">Admin</div>
+                        </div>
+                        <button class="header-profile-dropdown" aria-label="Profile menu">
+                            <svg class="header-profile-dropdown-border" width="19" height="19" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9.19995 0.100391C14.2257 0.100391 18.2996 4.17421 18.2996 9.2C18.2996 14.2258 14.2257 18.2996 9.19995 18.2996C4.17416 18.2996 0.100342 14.2258 0.100342 9.2C0.100342 4.17421 4.17416 0.100391 9.19995 0.100391Z" stroke="#5C5C5C" stroke-width="0.2"/>
+                            </svg>
+                            <svg class="header-profile-dropdown-chevron" width="8" height="5" viewBox="0 0 8 5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M1 1L4 4L7 1" stroke="#565656" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div class="header-profile-menu" id="headerProfileMenu">
+                        <a href="/logout" class="header-profile-menu-item">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;">
+                                <path d="M6 14H3C2.44772 14 2 13.5523 2 13V3C2 2.44772 2.44772 2 3 2H6M10 11L14 7M14 7L10 3M14 7H6" stroke="#404040" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Logout
+                        </a>
+                    </div>
                 </div>
+            </header>
 
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Cash Flow Advisory</div>
-                    <a href="/payroll-risk" class="sidebar-menu-item" id="nav-payroll-risk">Payroll Risk</a>
-                    <a href="/cash-flow-advisory/cash-strain" class="sidebar-menu-item" id="nav-cash-strain">Cash Strain</a>
-                </div>
+            <div class="main-content">
+                <main class="content-area">
+                    {% if error %}
+                    <div class="error-message">
+                        <strong>Error:</strong> {{ error }}
+                    </div>
+                    {% endif %}
 
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Profitability and Cost Analysis</div>
-                    <a href="/profitability/expense-creep" class="sidebar-menu-item" id="nav-expense-creep">Expense Creep</a>
-                    <a href="/profitability/customer-profitability" class="sidebar-menu-item" id="nav-customer-profitability">Customer Level Profitability</a>
-                </div>
-
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Tax Planning and Projection</div>
-                    <a href="/tax-planning/tax-liability" class="sidebar-menu-item" id="nav-tax-liability">Tax Liability</a>
-                    <a href="/tax-planning/capital-purchase-timing" class="sidebar-menu-item" id="nav-capital-timing">Capital Purchase Timing</a>
-                </div>
-
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Settings</div>
-                    <a href="/connections" class="sidebar-menu-item" id="nav-connections">Connections</a>
-                </div>
-
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Others</div>
-                    <a href="/accounts" class="sidebar-menu-item" id="nav-accounts">Chart of Accounts</a>
-                    <a href="/invoices" class="sidebar-menu-item" id="nav-invoices">Outstanding Invoices</a>
-                    <a href="/manual-journals" class="sidebar-menu-item" id="nav-manual-journals">Manual Journals</a>
-                    <a href="/bank-transactions" class="sidebar-menu-item" id="nav-bank-transactions">Bank Transactions</a>
-                </div>
-            </nav>
-
-            <main class="content-area">
-                {% if error %}
-                <div class="error-message">
-                    <strong>Error:</strong> {{ error }}
-                </div>
-                {% endif %}
-
-                {% block content %}{% endblock %}
-            </main>
+                    {% block content %}{% endblock %}
+                </main>
+            </div>
         </div>
     </div>
 
@@ -144,6 +1021,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             const currentPath = window.location.pathname;
             const menuItems = document.querySelectorAll('.sidebar-menu-item');
+            let activeItem = null;
             
             menuItems.forEach(item => {
                 const itemPath = new URL(item.href).pathname;
@@ -152,8 +1030,49 @@
                     (currentPath === '/' && itemPath === '/home') ||
                     (currentPath === '/settings' && itemPath === '/connections')) {
                     item.classList.add('active');
+                    activeItem = item;
                 }
             });
+            
+            // Scroll active menu item into view
+            if (activeItem) {
+                // Use setTimeout to ensure DOM is fully rendered
+                setTimeout(() => {
+                    activeItem.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center',
+                        inline: 'nearest'
+                    });
+                }, 100);
+            }
+
+            // Sidebar toggle functionality
+            const menuIcon = document.querySelector('.header-menu-icon');
+            const sidebar = document.querySelector('.sidebar');
+            
+            if (menuIcon && sidebar) {
+                menuIcon.addEventListener('click', function() {
+                    sidebar.classList.toggle('hidden');
+                });
+            }
+
+            // Profile dropdown toggle
+            const profileButton = document.getElementById('headerProfile');
+            const profileMenu = document.getElementById('headerProfileMenu');
+            
+            if (profileButton && profileMenu) {
+                profileButton.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    profileMenu.classList.toggle('show');
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!profileButton.contains(e.target) && !profileMenu.contains(e.target)) {
+                        profileMenu.classList.remove('show');
+                    }
+                });
+            }
         });
     </script>
     {% block extra_js %}{% endblock %}

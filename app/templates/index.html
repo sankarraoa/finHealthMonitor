@@ -3,9 +3,9 @@
 {% block title %}Chart of Accounts - FinHealthMonitor{% endblock %}
 
 {% block content %}
-<div class="content-section">
+        <div class="content-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Chart of Accounts</h2>
+                <h2>Chart of Accounts</h2>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     {% include "_connection_selector.html" %}
                     {% if selected_connection and selected_connection.software == "xero" %}
@@ -13,27 +13,56 @@
                     {% endif %}
                 </div>
             </div>
-            <p class="account-count">Total Accounts: {{ account_count }}</p>
             
             {% if async_mode and not accounts %}
-            <!-- Loading State with Progress -->
-            <div id="loading-indicator" style="margin-top: 30px; text-align: center; padding: 40px;">
-                <div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-                <h3 style="color: #667eea; margin-bottom: 10px;">Fetching Chart of Accounts from Xero</h3>
-                <p id="progress-message" style="color: #666; margin-bottom: 20px;">Initializing...</p>
-                <div style="width: 100%; max-width: 500px; margin: 0 auto; background: #e9ecef; border-radius: 10px; height: 30px; overflow: hidden; position: relative;">
-                    <div id="progress-bar" style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
-                        <span id="progress-percentage" style="color: white; font-weight: 600; font-size: 0.9em;">0%</span>
+            <!-- Loading State with Skeleton Table -->
+            <div id="loading-container">
+                <p id="loading-message" style="margin-bottom: 20px;">Fetching accounts from {{ selected_connection.software|title if selected_connection else 'connection' }}...</p>
+                
+                <!-- Skeleton Table -->
+                <table class="skeleton-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Class</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in range(10) %}
+                        <tr>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar medium"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-badge"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <!-- Progress Bar -->
+                <div class="progress-container" style="margin-top: 20px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-bar" style="width: 0%;">
+                            <span id="progress-percentage">0%</span>
+                        </div>
                     </div>
+                    <p id="progress-message" style="margin-top: 10px; text-align: center;">Initializing...</p>
                 </div>
-                <p style="color: #999; font-size: 0.9em; margin-top: 15px;">Please wait...</p>
             </div>
-            <style>
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            </style>
             <script>
                 (function() {
                     const sessionId = "{{ session_id }}";
@@ -46,8 +75,11 @@
                         const progressPercentage = document.getElementById('progress-percentage');
                         const progressMessage = document.getElementById('progress-message');
                         
-                        if (progressBar) progressBar.style.width = progress + '%';
-                        if (progressPercentage) progressPercentage.textContent = progress + '%';
+                        if (progressBar) {
+                            progressBar.style.width = progress + '%';
+                            const percentageSpan = progressBar.querySelector('#progress-percentage');
+                            if (percentageSpan) percentageSpan.textContent = progress + '%';
+                        }
                         if (progressMessage) progressMessage.textContent = message;
                     }
                     
@@ -81,33 +113,46 @@
                 })();
             </script>
             {% elif accounts %}
-            <div class="table-container">
-                <table class="accounts-table">
-                    <thead>
-                        <tr>
-                            <th>Code</th>
-                            <th>Name</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Class</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for account in accounts %}
-                        <tr>
-                            <td>{{ account.Code or '-' }}</td>
-                            <td>{{ account.Name }}</td>
-                            <td>{{ account.Type }}</td>
-                            <td>
-                                <span class="status-badge status-{{ account.Status.lower() }}">
-                                    {{ account.Status }}
-                                </span>
-                            </td>
-                            <td>{{ account.Class or '-' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <p class="account-count">Total Accounts: {{ account_count }}</p>
+            <table class="accounts-table">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Class</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in accounts %}
+                    <tr>
+                        <td>{{ account.Code or '-' }}</td>
+                        <td class="row-text-bold">{{ account.Name }}</td>
+                        <td>{{ account.Type }}</td>
+                        <td>
+                            <span class="status-badge status-{{ account.Status.lower() }}">
+                                <span>{{ account.Status }}</span>
+                            </span>
+                        </td>
+                        <td>{{ account.Class or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <!-- Pagination Control -->
+            <div class="pagination-control">
+                <button id="prevPage" onclick="navigatePage(-1)" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="nextPage" onclick="navigatePage(1)">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
             {% else %}
             <div class="empty-state">
@@ -133,3 +178,53 @@
         </div>
 {% endblock %}
 
+{% block extra_js %}
+<script>
+    // Pagination functionality
+    let currentPage = 1;
+    const rowsPerPage = 10;
+    
+    function navigatePage(direction) {
+        const table = document.querySelector('.accounts-table');
+        if (!table) return;
+        
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const totalPages = Math.ceil(rows.length / rowsPerPage);
+        
+        currentPage += direction;
+        
+        if (currentPage < 1) currentPage = 1;
+        if (currentPage > totalPages) currentPage = totalPages;
+        
+        // Hide all rows
+        rows.forEach(row => row.style.display = 'none');
+        
+        // Show rows for current page
+        const start = (currentPage - 1) * rowsPerPage;
+        const end = start + rowsPerPage;
+        rows.slice(start, end).forEach(row => row.style.display = '');
+        
+        // Update button states
+        const prevBtn = document.getElementById('prevPage');
+        const nextBtn = document.getElementById('nextPage');
+        
+        if (prevBtn) prevBtn.disabled = currentPage === 1;
+        if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+    }
+    
+    // Initialize pagination on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const table = document.querySelector('.accounts-table');
+        if (table) {
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            if (rows.length > rowsPerPage) {
+                navigatePage(0); // Initialize to show first page
+            } else {
+                // Hide pagination if not needed
+                const pagination = document.querySelector('.pagination-control');
+                if (pagination) pagination.style.display = 'none';
+            }
+        }
+    });
+</script>
+{% endblock %}

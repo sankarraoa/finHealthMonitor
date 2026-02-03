@@ -931,3 +931,418 @@ class XeroMCPClient:
                 self._initialized = False
                 logger.info("MCP client closed")
 
+
+class QuickBooksMCPClient:
+    """Client for interacting with QuickBooks MCP Server via stdio."""
+    
+    def __init__(self, mcp_server_path: Optional[str] = None, bearer_token: Optional[str] = None, realm_id: Optional[str] = None):
+        """
+        Initialize MCP client.
+        
+        Args:
+            mcp_server_path: Path to the MCP server executable
+            bearer_token: Optional bearer token for authentication (takes precedence)
+            realm_id: Optional realm/company ID to use for API calls
+        """
+        # Default to the installed MCP server in the project
+        if mcp_server_path is None:
+            project_root = Path(__file__).parent.parent
+            mcp_server_path = project_root / "quickbooks-mcp-server" / "dist" / "index.js"
+        
+        self.mcp_server_path = str(mcp_server_path)
+        self.process: Optional[subprocess.Popen] = None
+        self._request_id = 0
+        self._initialized = False
+        self._env = os.environ.copy()
+        self.bearer_token = bearer_token
+        self.realm_id = realm_id
+        
+        logger.info(f"Initializing QuickBooksMCPClient with server path: {self.mcp_server_path}")
+        if realm_id:
+            logger.info(f"Using realm_id: {realm_id}")
+        
+        # Check if MCP server file exists
+        if not os.path.exists(self.mcp_server_path):
+            error_msg = (
+                f"MCP server not found at: {self.mcp_server_path}. "
+                "Please ensure the quickbooks-mcp-server is built. "
+                "Run 'npm run build' in the quickbooks-mcp-server directory."
+            )
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        logger.info(f"MCP server file exists: {os.path.exists(self.mcp_server_path)}")
+        
+        # Set QuickBooks credentials from config
+        from app.config import config
+        if bearer_token:
+            # Use bearer token if provided (for runtime auth)
+            self._env["QUICKBOOKS_CLIENT_BEARER_TOKEN"] = bearer_token
+            logger.info("Using bearer token for authentication")
+        else:
+            # Otherwise use client ID/secret (for custom connections)
+            self._env["QUICKBOOKS_CLIENT_ID"] = config.QUICKBOOKS_CLIENT_ID
+            self._env["QUICKBOOKS_CLIENT_SECRET"] = config.QUICKBOOKS_CLIENT_SECRET
+            logger.info("Using client ID/secret for authentication")
+        
+        # Set realm_id if provided
+        if realm_id:
+            self._env["QUICKBOOKS_REALM_ID"] = realm_id
+            logger.info(f"Set QUICKBOOKS_REALM_ID environment variable: {realm_id}")
+    
+    async def _ensure_initialized(self):
+        """Ensure MCP server process is running."""
+        if not self._initialized:
+            await self.initialize()
+    
+    async def initialize(self):
+        """Initialize connection to MCP server by starting the process."""
+        if self._initialized:
+            logger.debug("MCP server already initialized, skipping")
+            return
+        
+        try:
+            logger.info("Starting QuickBooks MCP server subprocess...")
+            # Start the MCP server as a subprocess
+            self.process = subprocess.Popen(
+                ["node", self.mcp_server_path],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self._env,
+                text=True,
+                bufsize=0
+            )
+            logger.info(f"QuickBooks MCP server process started with PID: {self.process.pid}")
+            
+            # Send initialize request
+            logger.info("Sending initialize request to QuickBooks MCP server...")
+            init_request = {
+                "jsonrpc": "2.0",
+                "id": self._get_next_id(),
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "clientInfo": {
+                        "name": "finhealthmonitor",
+                        "version": "1.0.0"
+                    }
+                }
+            }
+            
+            init_response = await self._send_request(init_request)
+            logger.info(f"Initialize response received: {init_response.get('result', {}).get('serverInfo', {})}")
+            
+            # Send initialized notification (notifications don't return responses)
+            logger.info("Sending initialized notification...")
+            initialized_notification = {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }
+            await self._send_notification(initialized_notification)
+            logger.info("Initialized notification sent")
+            
+            self._initialized = True
+            logger.info("QuickBooks MCP server initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize QuickBooks MCP server: {str(e)}", exc_info=True)
+            # Log stderr if process exists
+            if self.process and self.process.stderr:
+                try:
+                    stderr_output = self.process.stderr.read()
+                    if stderr_output:
+                        logger.error(f"QuickBooks MCP server stderr: {stderr_output}")
+                except Exception:
+                    pass
+            raise
+    
+    def _get_next_id(self) -> int:
+        """Get next request ID."""
+        self._request_id += 1
+        return self._request_id
+    
+    async def _check_and_restart_process(self) -> bool:
+        """
+        Check if the MCP server process is alive and restart it if needed.
+        
+        Returns:
+            True if process was restarted, False if it was already alive
+        """
+        if not self.process:
+            logger.warning("QuickBooks MCP server process not started, initializing...")
+            await self.initialize()
+            return True
+        
+        # Check if process is still alive
+        if self.process.poll() is not None:
+            exit_code = self.process.returncode
+            logger.warning(f"QuickBooks MCP server process exited with code: {exit_code}, restarting...")
+            
+            # Try to read stderr for error details
+            try:
+                stderr_output = self.process.stderr.read()
+                if stderr_output:
+                    logger.error(f"QuickBooks MCP server stderr: {stderr_output}")
+            except Exception:
+                pass
+            
+            # Clean up old process
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                try:
+                    self.process.kill()
+                    self.process.wait(timeout=1)
+                except Exception:
+                    pass
+            
+            self.process = None
+            self._initialized = False
+            
+            # Restart the process
+            await self.initialize()
+            return True
+        
+        return False
+    
+    async def _send_request(self, request: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        """
+        Send a JSON-RPC request to the MCP server with automatic retry and process restart.
+        
+        Args:
+            request: JSON-RPC request dictionary
+            max_retries: Maximum number of retry attempts (default: 3)
+            
+        Returns:
+            JSON-RPC response dictionary
+        """
+        for attempt in range(max_retries):
+            try:
+                # Check and restart process if needed
+                await self._check_and_restart_process()
+                
+                if not self.process:
+                    raise RuntimeError("QuickBooks MCP server process not started")
+                
+                request_id = request.get("id", "unknown")
+                method = request.get("method", "unknown")
+                logger.debug(f"Sending QuickBooks MCP request (ID: {request_id}, Method: {method}, Attempt: {attempt + 1})")
+                
+                # Send request
+                request_json = json.dumps(request) + "\n"
+                try:
+                    self.process.stdin.write(request_json)
+                    self.process.stdin.flush()
+                    logger.debug(f"Request sent: {method}")
+                except (BrokenPipeError, OSError) as e:
+                    error_str = str(e)
+                    logger.warning(f"Broken pipe or OS error writing to QuickBooks MCP server (attempt {attempt + 1}/{max_retries}): {error_str}")
+                    
+                    # Check if process died
+                    if self.process.poll() is not None:
+                        logger.warning("Process died, will restart on next attempt")
+                        self.process = None
+                        self._initialized = False
+                    
+                    # Retry with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                        logger.info(f"Waiting {wait_time:.1f}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise RuntimeError(f"Failed to send request to QuickBooks MCP server after {max_retries} attempts: {error_str}")
+                except Exception as e:
+                    logger.error(f"Unexpected error writing to QuickBooks MCP server stdin: {str(e)}")
+                    raise RuntimeError(f"Failed to send request to QuickBooks MCP server: {str(e)}")
+                
+                # Read response (non-blocking)
+                try:
+                    logger.info(f"Waiting for response from QuickBooks MCP server (request ID: {request_id}, method: {method})...")
+                    response_line = await asyncio.to_thread(self.process.stdout.readline)
+                    logger.debug(f"Received response line (length: {len(response_line) if response_line else 0} chars)")
+                    if not response_line:
+                        # Check if process is still alive
+                        if self.process.poll() is not None:
+                            exit_code = self.process.returncode
+                            logger.warning(f"QuickBooks MCP server process exited with code: {exit_code}")
+                            # Try to read stderr for error details
+                            try:
+                                stderr_output = self.process.stderr.read()
+                                if stderr_output:
+                                    logger.error(f"QuickBooks MCP server stderr: {stderr_output}")
+                            except Exception:
+                                pass
+                            
+                            # Retry if we have attempts left
+                            if attempt < max_retries - 1:
+                                self.process = None
+                                self._initialized = False
+                                wait_time = 0.5 * (2 ** attempt)
+                                logger.info(f"Process died, waiting {wait_time:.1f}s before retry...")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                raise RuntimeError(f"QuickBooks MCP server process exited unexpectedly with code {exit_code}")
+                        raise RuntimeError("No response from QuickBooks MCP server (process still running)")
+                    
+                    logger.info(f"Response received (length: {len(response_line)} chars, request ID: {request_id})")
+                    logger.debug(f"Response preview: {response_line[:200] if len(response_line) > 200 else response_line}")
+                    response = json.loads(response_line.strip())
+                    response_id = response.get('id', 'N/A')
+                    logger.info(f"Parsed response (ID: {response_id}, has result: {'result' in response}, has error: {'error' in response})")
+                    
+                    # Verify response ID matches request ID
+                    if response_id != request_id:
+                        logger.warning(f"Response ID {response_id} does not match request ID {request_id}")
+                    
+                    # Check for errors
+                    if "error" in response:
+                        error = response["error"]
+                        error_msg = f"QuickBooks MCP error: {error.get('message', 'Unknown error')}"
+                        error_code = error.get('code', 'unknown')
+                        logger.error(f"QuickBooks MCP server returned error (code: {error_code}): {error_msg}")
+                        raise RuntimeError(error_msg)
+                    
+                    return response
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse QuickBooks MCP server response: {str(e)}")
+                    logger.error(f"Response line: {response_line[:200] if 'response_line' in locals() else 'N/A'}...")
+                    
+                    # Retry on JSON decode errors if we have attempts left
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (2 ** attempt)
+                        logger.info(f"JSON decode error, waiting {wait_time:.1f}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise RuntimeError(f"Invalid JSON response from QuickBooks MCP server: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error reading from QuickBooks MCP server: {str(e)}")
+                    # Retry on other errors if we have attempts left
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (2 ** attempt)
+                        logger.info(f"Read error, waiting {wait_time:.1f}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise
+            except RuntimeError as e:
+                # If it's a process-related error and we have retries left, try again
+                if "process" in str(e).lower() and attempt < max_retries - 1:
+                    wait_time = 0.5 * (2 ** attempt)
+                    logger.info(f"Process error, waiting {wait_time:.1f}s before retry...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
+        
+        # Should never reach here, but just in case
+        raise RuntimeError(f"Failed to send request to QuickBooks MCP server after {max_retries} attempts")
+    
+    async def _send_notification(self, notification: Dict[str, Any]) -> None:
+        """
+        Send a JSON-RPC notification to the MCP server.
+        Notifications don't return responses, so we don't wait for one.
+        
+        Args:
+            notification: JSON-RPC notification dictionary (no 'id' field)
+        """
+        if not self.process:
+            raise RuntimeError("QuickBooks MCP server process not started")
+        
+        method = notification.get("method", "unknown")
+        logger.debug(f"Sending QuickBooks MCP notification (Method: {method})")
+        
+        # Send notification
+        notification_json = json.dumps(notification) + "\n"
+        try:
+            self.process.stdin.write(notification_json)
+            self.process.stdin.flush()
+            logger.debug(f"Notification sent: {method}")
+        except Exception as e:
+            logger.error(f"Error writing notification to QuickBooks MCP server stdin: {str(e)}")
+            raise RuntimeError(f"Failed to send notification to QuickBooks MCP server: {str(e)}")
+    
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        """List available MCP tools."""
+        await self._ensure_initialized()
+        
+        request = {
+            "jsonrpc": "2.0",
+            "id": self._get_next_id(),
+            "method": "tools/list"
+        }
+        
+        response = await self._send_request(request)
+        return response.get("result", {}).get("tools", [])
+    
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Call an MCP tool.
+        
+        Args:
+            tool_name: Name of the tool to call
+            arguments: Tool arguments
+            
+        Returns:
+            Tool execution result
+        """
+        logger.info(f"Calling QuickBooks MCP tool: {tool_name} with arguments: {arguments}")
+        await self._ensure_initialized()
+        
+        request = {
+            "jsonrpc": "2.0",
+            "id": self._get_next_id(),
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments
+            }
+        }
+        
+        logger.info(f"Sending QuickBooks tool call request (ID: {request['id']})...")
+        try:
+            # Add timeout to prevent indefinite hanging (60 seconds for tool calls)
+            response = await asyncio.wait_for(
+                self._send_request(request),
+                timeout=60.0
+            )
+            logger.info(f"QuickBooks tool call request completed (ID: {request['id']})")
+        except asyncio.TimeoutError:
+            logger.error(f"QuickBooks tool call {tool_name} timed out after 60 seconds")
+            raise RuntimeError(f"QuickBooks tool call {tool_name} timed out after 60 seconds. The MCP server may be unresponsive.")
+        except Exception as e:
+            logger.error(f"Error calling QuickBooks tool {tool_name}: {str(e)}", exc_info=True)
+            raise
+        
+        result = response.get("result", {})
+        logger.info(f"QuickBooks tool {tool_name} returned result (keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'})")
+        return result
+    
+    async def close(self):
+        """Close connection to MCP server."""
+        if self.process:
+            logger.info(f"Closing QuickBooks MCP server connection (PID: {self.process.pid})")
+            try:
+                self.process.terminate()
+                logger.debug("Sent terminate signal to QuickBooks MCP server process")
+                self.process.wait(timeout=5)
+                logger.info("QuickBooks MCP server process terminated successfully")
+            except subprocess.TimeoutExpired:
+                logger.warning("QuickBooks MCP server process did not terminate in time, killing...")
+                self.process.kill()
+                self.process.wait()
+                logger.info("QuickBooks MCP server process killed")
+            except Exception as e:
+                logger.error(f"Error closing QuickBooks MCP server: {str(e)}", exc_info=True)
+            finally:
+                self.process = None
+                self._initialized = False
+                logger.info("QuickBooks MCP client closed")
+

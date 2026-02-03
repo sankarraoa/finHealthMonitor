@@ -4,31 +4,8 @@
 
 {% block extra_css %}
 <style>
-        .journal-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            background: white;
-        }
-        .journal-table thead {
-            background: #f8f9fa;
-        }
-        .journal-table th {
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            color: #333;
-            border-bottom: 2px solid #dee2e6;
-        }
-        .journal-table td {
-            padding: 12px;
-            border-bottom: 1px solid #dee2e6;
-        }
-        .journal-table tbody tr:hover {
-            background: #f8f9fa;
-        }
         .expand-btn {
-            background: #667eea;
+            background: #4880FF;
             color: white;
             border: none;
             padding: 6px 12px;
@@ -38,7 +15,7 @@
             transition: background 0.3s ease;
         }
         .expand-btn:hover {
-            background: #5568d3;
+            opacity: 0.9;
         }
         .journal-details {
             display: none;
@@ -46,7 +23,7 @@
             padding: 15px;
             background: #f8f9fa;
             border-radius: 6px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #4880FF;
         }
         .journal-details.show {
             display: block;
@@ -76,32 +53,13 @@
             color: #dc3545;
             font-weight: 600;
         }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.8em;
-            font-weight: 600;
-        }
-        .status-posted {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status-draft {
-            background: #fff3cd;
-            color: #856404;
-        }
-        .status-voided {
-            background: #f8d7da;
-            color: #721c24;
-        }
     </style>
 {% endblock %}
 
 {% block content %}
-<div class="content-section">
+        <div class="content-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Manual Journal Entries</h2>
+                <h2>Manual Journal Entries</h2>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     {% include "_connection_selector.html" %}
                     {% if selected_connection and selected_connection.software == "xero" %}
@@ -117,24 +75,58 @@
             {% endif %}
 
             {% if async_mode and not journals %}
-            <!-- Loading State with Progress -->
-            <div id="loading-indicator" style="margin-top: 30px; text-align: center; padding: 40px;">
-                <div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-                <h3 style="color: #667eea; margin-bottom: 10px;">Fetching Manual Journals from Xero</h3>
-                <p id="progress-message" style="color: #666; margin-bottom: 20px;">Initializing...</p>
-                <div style="width: 100%; max-width: 500px; margin: 0 auto; background: #e9ecef; border-radius: 10px; height: 30px; overflow: hidden; position: relative;">
-                    <div id="progress-bar" style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
-                        <span id="progress-percentage" style="color: white; font-weight: 600; font-size: 0.9em;">0%</span>
+            <!-- Loading State with Skeleton Table -->
+            <div id="loading-container">
+                <p id="loading-message" style="margin-bottom: 20px;">Fetching manual journals from {{ selected_connection.software|title if selected_connection else 'connection' }}...</p>
+                
+                <!-- Skeleton Table -->
+                <table class="skeleton-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Journal Number</th>
+                            <th>Narration</th>
+                            <th>Total Amount</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in range(10) %}
+                        <tr>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar medium"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-badge"></div>
+                            </td>
+                            <td class="skeleton-cell">
+                                <div class="skeleton-bar short"></div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <!-- Progress Bar -->
+                <div class="progress-container" style="margin-top: 20px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-bar" style="width: 0%;">
+                            <span id="progress-percentage">0%</span>
+                        </div>
                     </div>
+                    <p id="progress-message" style="margin-top: 10px; text-align: center;">Initializing...</p>
                 </div>
-                <p style="color: #999; font-size: 0.9em; margin-top: 15px;">Please wait...</p>
             </div>
-            <style>
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            </style>
             <script>
                 (function() {
                     const sessionId = "{{ session_id }}";
@@ -147,8 +139,11 @@
                         const progressPercentage = document.getElementById('progress-percentage');
                         const progressMessage = document.getElementById('progress-message');
                         
-                        if (progressBar) progressBar.style.width = progress + '%';
-                        if (progressPercentage) progressPercentage.textContent = progress + '%';
+                        if (progressBar) {
+                            progressBar.style.width = progress + '%';
+                            const percentageSpan = progressBar.querySelector('#progress-percentage');
+                            if (percentageSpan) percentageSpan.textContent = progress + '%';
+                        }
                         if (progressMessage) progressMessage.textContent = message;
                     }
                     
@@ -182,83 +177,95 @@
                 })();
             </script>
             {% elif journals %}
-            <div class="table-container">
-                <table class="journal-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Journal Number</th>
-                            <th>Narration</th>
-                            <th>Total Amount</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for journal in journals %}
-                        <tr>
-                            <td>{{ journal.date or 'N/A' }}</td>
-                            <td>{{ journal.journal_number or journal.id[:8] + '...' }}</td>
-                            <td>{{ journal.narration or 'N/A' }}</td>
-                            <td>
-                                <span class="{% if journal.total >= 0 %}amount-positive{% else %}amount-negative{% endif %}">
-                                    ${{ "%.2f"|format(journal.total) }}
-                                </span>
-                            </td>
-                            <td>
-                                <span class="status-badge status-{{ journal.status|lower|replace(' ', '-') }}">
-                                    {{ journal.status or 'N/A' }}
-                                </span>
-                            </td>
-                            <td>
-                                <button class="expand-btn" onclick="toggleDetails(this, 'journal-{{ loop.index }}')">
-                                    <span class="expand-text">Show Details</span>
-                                </button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td colspan="6" style="padding: 0;">
-                                <div id="journal-{{ loop.index }}" class="journal-details">
-                                    <h4 style="margin-top: 0; color: #667eea;">Journal Details</h4>
-                                    <p><strong>Journal ID:</strong> {{ journal.id or 'N/A' }}</p>
-                                    {% if journal.lines %}
-                                    <h5 style="margin-top: 15px; margin-bottom: 10px;">Line Items:</h5>
-                                    <table class="lines-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Account Code</th>
-                                                <th>Description</th>
-                                                <th>Amount</th>
-                                                <th>Tax Type</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for line in journal.lines %}
-                                            <tr>
-                                                <td>{{ line.accountCode or 'N/A' }}</td>
-                                                <td>{{ line.description or 'N/A' }}</td>
-                                                <td>
-                                                    <span class="{% if line.lineAmount >= 0 %}amount-positive{% else %}amount-negative{% endif %}">
-                                                        ${{ "%.2f"|format(line.lineAmount) }}
-                                                    </span>
-                                                </td>
-                                                <td>{{ line.taxType or 'N/A' }}</td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                    {% else %}
-                                    <p style="color: #6c757d; font-style: italic;">No line items available</p>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <table class="accounts-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Journal Number</th>
+                        <th>Narration</th>
+                        <th>Total Amount</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for journal in journals %}
+                    <tr>
+                        <td>{{ journal.date or 'N/A' }}</td>
+                        <td class="row-text-bold">{{ journal.journal_number or journal.id[:8] + '...' }}</td>
+                        <td>{{ journal.narration or 'N/A' }}</td>
+                        <td>
+                            <span class="{% if journal.total >= 0 %}amount-positive{% else %}amount-negative{% endif %}">
+                                ${{ "%.2f"|format(journal.total) }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ journal.status|lower|replace(' ', '-') }}">
+                                <span>{{ journal.status or 'N/A' }}</span>
+                            </span>
+                        </td>
+                        <td>
+                            <button class="expand-btn" onclick="toggleDetails(this, 'journal-{{ loop.index }}')">
+                                <span class="expand-text">Show Details</span>
+                            </button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" style="padding: 0;">
+                            <div id="journal-{{ loop.index }}" class="journal-details">
+                                <h4>Journal Details</h4>
+                                <p><strong>Journal ID:</strong> {{ journal.id or 'N/A' }}</p>
+                                {% if journal.lines %}
+                                <h5>Line Items:</h5>
+                                <table class="lines-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Account Code</th>
+                                            <th>Description</th>
+                                            <th>Amount</th>
+                                            <th>Tax Type</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for line in journal.lines %}
+                                        <tr>
+                                            <td>{{ line.accountCode or 'N/A' }}</td>
+                                            <td>{{ line.description or 'N/A' }}</td>
+                                            <td>
+                                                <span class="{% if line.lineAmount >= 0 %}amount-positive{% else %}amount-negative{% endif %}">
+                                                    ${{ "%.2f"|format(line.lineAmount) }}
+                                                </span>
+                                            </td>
+                                            <td>{{ line.taxType or 'N/A' }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% else %}
+                                <p>No line items available</p>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <!-- Pagination Control -->
+            <div class="pagination-control">
+                <button id="prevPage" onclick="navigatePage(-1)" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="nextPage" onclick="navigatePage(1)">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
             {% else %}
-            <div style="background: #e9ecef; padding: 20px; border-radius: 6px; text-align: center; color: #6c757d;">
+            <div style="background: #e9ecef; padding: 20px; border-radius: 6px; text-align: center;">
                 <p>No manual journals found.</p>
             </div>
             {% endif %}
@@ -268,7 +275,6 @@
                 <a href="/home" class="btn btn-secondary">Back to Home</a>
             </div>
         </div>
-    </div>
 
     <script>
         function toggleDetails(button, id) {
@@ -288,5 +294,59 @@
                 if (text) text.textContent = 'Hide Details';
             }
         }
+        
+        // Pagination functionality
+        let currentPage = 1;
+        const rowsPerPage = 10;
+        
+        function navigatePage(direction) {
+            const table = document.querySelector('.accounts-table');
+            if (!table) return;
+            
+            const rows = Array.from(table.querySelectorAll('tbody tr:not([colspan])'));
+            const totalPages = Math.ceil(rows.length / rowsPerPage);
+            
+            currentPage += direction;
+            
+            if (currentPage < 1) currentPage = 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            
+            // Hide all rows and their detail rows
+            table.querySelectorAll('tbody tr').forEach(row => row.style.display = 'none');
+            
+            // Show rows for current page
+            const start = (currentPage - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            rows.slice(start, end).forEach((row, index) => {
+                row.style.display = '';
+                // Show detail row if it exists and is expanded
+                const detailRow = row.nextElementSibling;
+                if (detailRow && detailRow.querySelector('.journal-details.show')) {
+                    detailRow.style.display = '';
+                }
+            });
+            
+            // Update button states
+            const prevBtn = document.getElementById('prevPage');
+            const nextBtn = document.getElementById('nextPage');
+            
+            if (prevBtn) prevBtn.disabled = currentPage === 1;
+            if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+        }
+        
+        // Initialize pagination on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const table = document.querySelector('.accounts-table');
+            if (table) {
+                const rows = Array.from(table.querySelectorAll('tbody tr:not([colspan])'));
+                if (rows.length > rowsPerPage) {
+                    navigatePage(0); // Initialize to show first page
+                } else {
+                    // Hide pagination if not needed
+                    const pagination = document.querySelector('.pagination-control');
+                    if (pagination) pagination.style.display = 'none';
+                }
+            }
+        });
     </script>
 {% endblock %}
