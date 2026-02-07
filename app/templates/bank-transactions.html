@@ -2,59 +2,7 @@
 
 {% block title %}Bank Transactions - FinHealthMonitor{% endblock %}
 
-{% block extra_css %}
-<style>
-        .expand-btn {
-            background: #4880FF;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85em;
-            transition: background 0.3s ease;
-        }
-        .expand-btn:hover {
-            opacity: 0.9;
-        }
-        .transaction-details {
-            display: none;
-            margin-top: 15px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            border-left: 4px solid #4880FF;
-        }
-        .transaction-details.show {
-            display: block;
-        }
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        .items-table th {
-            background: #e9ecef;
-            padding: 8px;
-            text-align: left;
-            font-size: 0.9em;
-            font-weight: 600;
-        }
-        .items-table td {
-            padding: 8px;
-            border-bottom: 1px solid #dee2e6;
-            font-size: 0.9em;
-        }
-        .amount-positive {
-            color: #28a745;
-            font-weight: 600;
-        }
-        .amount-negative {
-            color: #dc3545;
-            font-weight: 600;
-        }
-    </style>
-{% endblock %}
+{% block extra_css %}{% endblock %}
 
 {% block content %}
         <div class="content-section">

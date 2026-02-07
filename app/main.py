@@ -55,6 +55,10 @@ xero_client = XeroClient()
 # Initialize QuickBooks client
 quickbooks_client = QuickBooksClient()
 
+# Include RBAC routes
+from app.routes import rbac
+app.include_router(rbac.router)
+
 
 def get_connections_for_selector() -> Dict[str, Any]:
     """
@@ -314,6 +318,7 @@ async def _run_payroll_risk_async(
         agent = PayrollRiskAgent(
             bearer_token=access_token,
             tenant_id=tenant_id,
+            connection_id=connection_id,
             llm_model=llm_model,
             progress_callback=update_progress
         )
@@ -450,6 +455,19 @@ async def debug_xero_config(request: Request):
         "auth_url": xero_client.auth_url,
         "scopes": xero_client.scopes
     })
+
+
+@app.get("/login-page", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Display login page."""
+    error = request.query_params.get("error")
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "error": error
+        }
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1647,6 +1665,40 @@ async def settings(request: Request):
             "software_options": software_options,
             "success": success,
             "error": error
+        }
+    )
+
+
+# Security Management Routes
+@app.get("/security/users", response_class=HTMLResponse)
+async def security_users(request: Request):
+    """Display users management page."""
+    return templates.TemplateResponse(
+        "security/users.html",
+        {
+            "request": request
+        }
+    )
+
+
+@app.get("/security/roles", response_class=HTMLResponse)
+async def security_roles(request: Request):
+    """Display roles management page."""
+    return templates.TemplateResponse(
+        "security/roles.html",
+        {
+            "request": request
+        }
+    )
+
+
+@app.get("/security/permissions", response_class=HTMLResponse)
+async def security_permissions(request: Request):
+    """Display permissions management page."""
+    return templates.TemplateResponse(
+        "security/permissions.html",
+        {
+            "request": request
         }
     )
 
@@ -4169,6 +4221,8 @@ async def capital_purchase_timing(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
+    import os
+    
     # Validate config before starting
     try:
         config.validate()
@@ -4177,5 +4231,10 @@ if __name__ == "__main__":
         logger.error("Please set XERO_CLIENT_ID and XERO_CLIENT_SECRET in your .env file")
         exit(1)
     
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Get port from environment variable (Railway sets this)
+    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "0.0.0.0")
+    
+    logger.info(f"Starting server on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)
 

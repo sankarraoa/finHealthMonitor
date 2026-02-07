@@ -1,0 +1,252 @@
+/* Table Styles - Regular Tables and Skeleton Loading Tables */
+
+/* Table Container */
+.table-container {
+    overflow-x: auto;
+    margin-top: 20px;
+}
+
+/* Regular Tables */
+.analyses-table,
+.accounts-table,
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    box-sizing: border-box;
+    background: #FFFFFF;
+    border: 0.3px solid #B9B9B9;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.analyses-table thead,
+.accounts-table thead,
+table thead {
+    background: #FCFDFD;
+}
+
+.analyses-table thead tr:first-child th:first-child,
+.accounts-table thead tr:first-child th:first-child,
+table thead tr:first-child th:first-child {
+    border-top-left-radius: 14px;
+}
+
+.analyses-table thead tr:first-child th:last-child,
+.accounts-table thead tr:first-child th:last-child,
+table thead tr:first-child th:last-child {
+    border-top-right-radius: 14px;
+}
+
+.analyses-table th,
+.accounts-table th,
+table th {
+    padding: 15px;
+    text-align: left;
+    font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-style: normal;
+    font-size: 14px;
+    line-height: 19px;
+    color: #202224;
+    mix-blend-mode: normal;
+    opacity: 0.9;
+    border-bottom: 0.6px solid #D5D5D5;
+    border-top: 0.6px solid #D5D5D5;
+    font-weight: normal;
+    text-transform: none;
+}
+
+.analyses-table thead th:first-child,
+.accounts-table thead th:first-child,
+table thead th:first-child {
+    border-left: 0.6px solid #D5D5D5;
+}
+
+.analyses-table thead th:last-child,
+.accounts-table thead th:last-child,
+table thead th:last-child {
+    border-right: 0.6px solid #D5D5D5;
+}
+
+.analyses-table tbody tr,
+.accounts-table tbody tr,
+table tbody tr {
+    position: relative;
+}
+
+.analyses-table tbody tr:not(:last-child)::after,
+.accounts-table tbody tr:not(:last-child)::after,
+table tbody tr:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-bottom: 0.4px solid #979797;
+    mix-blend-mode: normal;
+    opacity: 0.6;
+}
+
+.analyses-table td,
+.accounts-table td,
+table td {
+    padding: 15px;
+    font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-style: normal;
+    font-size: 14px;
+    line-height: 19px;
+    color: #202224;
+    mix-blend-mode: normal;
+    opacity: 0.9;
+    border-bottom: none;
+}
+
+.analyses-table td.row-text-bold,
+.accounts-table td.row-text-bold,
+table td.row-text-bold {
+    font-weight: 600;
+}
+
+.analyses-table tbody tr:hover,
+.accounts-table tbody tr:hover,
+table tbody tr:hover {
+    background: #F5F6FA;
+    cursor: pointer;
+}
+
+.analyses-table tbody tr:last-child td,
+.accounts-table tbody tr:last-child td,
+table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Skeleton Loading Table */
+.skeleton-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #FFFFFF;
+    border: 0.3px solid #B9B9B9;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-top: 20px;
+}
+
+.skeleton-table thead {
+    background: #FCFDFD;
+    border-bottom: 0.6px solid #D5D5D5;
+}
+
+.skeleton-table th {
+    padding: 16px 20px;
+    text-align: left;
+    font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-style: normal;
+    font-size: 14px;
+    line-height: 19px;
+    color: #202224;
+    opacity: 0.9;
+}
+
+.skeleton-table tbody tr {
+    border-bottom: 0.4px solid #979797;
+    opacity: 0.6;
+}
+
+.skeleton-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.skeleton-table tbody tr:hover {
+    background: transparent;
+}
+
+.skeleton-cell {
+    padding: 16px 20px;
+    height: 19px;
+    position: relative;
+    overflow: hidden;
+}
+
+.skeleton-shimmer {
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.4) 50%,
+        transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+.skeleton-bar {
+    height: 12px;
+    background: #E0E0E0;
+    border-radius: 4px;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.skeleton-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.6) 50%,
+        transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+.skeleton-bar.short {
+    width: 60%;
+}
+
+.skeleton-bar.medium {
+    width: 80%;
+}
+
+.skeleton-badge {
+    display: inline-block;
+    height: 24px;
+    width: 80px;
+    background: #E0E0E0;
+    border-radius: 4.5px;
+    position: relative;
+    overflow: hidden;
+}
+
+.skeleton-badge::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.6) 50%,
+        transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+}

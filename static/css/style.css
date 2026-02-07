@@ -20,27 +20,355 @@ body {
     margin: 0 auto;
 }
 
-/* Login Page */
+/* Login Page - Figma Design */
+.login-page {
+    background: #4880ff;
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-background {
+    position: absolute;
+    inset: 0;
+    background: #4880ff;
+    overflow: hidden;
+}
+
+.login-shape-decoration {
+    position: absolute;
+    inset: -67.48% -46.27% -49.37% -13.96%;
+    background: radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 50% 80%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 60% 100%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+    opacity: 0.6;
+}
+
+.login-container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
 .login-card {
     background: white;
-    border-radius: 12px;
-    padding: 40px;
+    border: 0.3px solid #b9b9b9;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 480px;
+    padding: 40px 32px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-    max-width: 500px;
-    margin: 100px auto;
+    position: relative;
+}
+
+.login-content {
+    width: 100%;
+    margin: 0 auto;
+}
+
+.login-title {
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 32px;
+    color: #202224;
     text-align: center;
+    margin: 0 0 12px 0;
+    letter-spacing: -0.5px;
 }
 
-.login-card h1 {
-    color: #667eea;
-    margin-bottom: 10px;
-    font-size: 2.5em;
+.login-subtitle {
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 20px;
+    color: #202224;
+    opacity: 0.8;
+    text-align: center;
+    margin: 0 0 24px 0;
+    letter-spacing: -0.3px;
 }
 
-.subtitle {
+.login-form {
+    width: 100%;
+}
+
+/* Social Login Section */
+.social-login-section {
+    margin-bottom: 24px;
+}
+
+.social-login-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.social-login-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    background: white;
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    color: #202224;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+
+.social-login-btn:hover {
+    border-color: #4880ff;
+    background: #f8f9ff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(72, 128, 255, 0.15);
+}
+
+.social-login-btn:active {
+    transform: translateY(0);
+}
+
+.social-icon {
+    flex-shrink: 0;
+}
+
+.google-btn:hover {
+    border-color: #4285F4;
+    background: #f8f9ff;
+}
+
+.microsoft-btn:hover {
+    border-color: #00A4EF;
+    background: #f0f8ff;
+}
+
+.okta-btn:hover {
+    border-color: #007DC1;
+    background: #f0f7ff;
+}
+
+.divider {
+    position: relative;
+    text-align: center;
+    margin: 20px 0;
+}
+
+.divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #e0e0e0;
+}
+
+.divider-text {
+    position: relative;
+    background: white;
+    padding: 0 12px;
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
     color: #666;
-    margin-bottom: 30px;
-    font-size: 1.1em;
+    letter-spacing: 0.3px;
+}
+
+.login-form .form-group {
+    margin-bottom: 18px;
+}
+
+.form-label {
+    display: block;
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 20px;
+    color: #202224;
+    opacity: 0.8;
+    margin-bottom: 6px;
+    letter-spacing: -0.3px;
+}
+
+.form-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.form-label-row .form-label {
+    margin-bottom: 0;
+}
+
+.forgot-password-link {
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 18px;
+    color: #202224;
+    opacity: 0.6;
+    text-decoration: none;
+    letter-spacing: -0.3px;
+    transition: opacity 0.2s ease;
+}
+
+.forgot-password-link:hover {
+    opacity: 0.8;
+}
+
+.form-input {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    background: #f1f4f9;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 20px;
+    color: #202224;
+    letter-spacing: -0.3px;
+    outline: none;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.form-input::placeholder {
+    color: #a6a6a6;
+    opacity: 1;
+}
+
+.form-input:focus {
+    border-color: #4880ff;
+    background: #ffffff;
+}
+
+.remember-password-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.remember-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 0.6px solid #a3a3a3;
+    border-radius: 4px;
+    cursor: pointer;
+    appearance: none;
+    position: relative;
+    flex-shrink: 0;
+    background: white;
+    transition: all 0.2s ease;
+}
+
+.remember-checkbox:checked {
+    background: #4880ff;
+    border-color: #4880ff;
+}
+
+.remember-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: translate(-50%, -60%) rotate(45deg);
+}
+
+.remember-label {
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 18px;
+    color: #202224;
+    opacity: 0.6;
+    cursor: pointer;
+    letter-spacing: -0.3px;
+    user-select: none;
+}
+
+.btn-signin {
+    width: 100%;
+    height: 44px;
+    background: #4880ff;
+    opacity: 0.9;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 20px;
+    color: white;
+    cursor: pointer;
+    letter-spacing: -0.3px;
+    transition: all 0.2s ease;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    text-decoration: none;
+}
+
+.btn-signin:hover {
+    opacity: 1;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(72, 128, 255, 0.4);
+}
+
+.btn-signin:active {
+    transform: translateY(0);
+}
+
+.create-account-link {
+    text-align: center;
+    font-family: 'Nunito Sans', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 18px;
+    letter-spacing: -0.3px;
+}
+
+.create-account-text {
+    color: #202224;
+    opacity: 0.65;
+}
+
+.create-account-link-text {
+    color: #5a8cff;
+    text-decoration: underline;
+    text-decoration-skip-ink: none;
+    font-weight: 700;
+    transition: color 0.2s ease;
+}
+
+.create-account-link-text:hover {
+    color: #4880ff;
 }
 
 .error-message {
@@ -51,6 +379,8 @@ body {
     border-radius: 6px;
     margin-bottom: 20px;
     text-align: left;
+    font-family: 'Nunito Sans', sans-serif;
+    font-size: 14px;
 }
 
 .info-box {
@@ -60,6 +390,53 @@ body {
     border-radius: 6px;
     font-size: 0.9em;
     color: #666;
+}
+
+/* Responsive Design for Login Page */
+@media (max-width: 768px) {
+    .login-card {
+        padding: 32px 24px;
+        border-radius: 12px;
+        margin: 20px;
+        max-width: 100%;
+    }
+    
+    .login-title {
+        font-size: 22px;
+        line-height: 28px;
+    }
+    
+    .login-subtitle {
+        font-size: 13px;
+        line-height: 18px;
+    }
+    
+    .social-login-buttons {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    
+    .social-login-btn {
+        padding: 12px;
+        font-size: 14px;
+    }
+    
+    .form-label,
+    .form-input,
+    .remember-label,
+    .forgot-password-link,
+    .create-account-link {
+        font-size: 13px;
+    }
+    
+    .form-input {
+        height: 42px;
+    }
+    
+    .btn-signin {
+        height: 42px;
+        font-size: 14px;
+    }
 }
 
 /* Header */

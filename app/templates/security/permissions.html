@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Permissions - Security - FinHealthMonitor{% endblock %}
+
+{% block content %}
+<div class="content-section">
+    <div style="margin-bottom: 24px;">
+        <h2>Permissions</h2>
+        <p style="margin-top: 8px; color: #606060;">View all available permissions. Permissions are managed from the backend.</p>
+    </div>
+
+    {% if error %}
+    <div style="background: #f8d7da; padding: 15px; border-radius: 6px; margin-bottom: 20px; color: #721c24;">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    {% if success %}
+    <div style="background: #d4edda; padding: 15px; border-radius: 6px; margin-bottom: 20px; color: #155724;">
+        <strong>Success:</strong> {{ success }}
+    </div>
+    {% endif %}
+
+    <div id="permissions-container">
+        <div style="text-align: center; padding: 40px; color: #606060;">Loading permissions...</div>
+    </div>
+</div>
+
+
+<script>
+let editingPermissionId = null;
+
+// Load permissions
+async function loadPermissions() {
+    try {
+        const response = await fetch('/api/permissions/by-resource');
+        if (!response.ok) {
+            throw new Error('Failed to load permissions');
+        }
+        const permissionsByResource = await response.json();
+        displayPermissions(permissionsByResource);
+    } catch (error) {
+        console.error('Error loading permissions:', error);
+        document.getElementById('permissions-container').innerHTML = 
+            '<div style="text-align: center; padding: 40px; color: #dc3545;">Error loading permissions: ' + error.message + '</div>';
+    }
+}
+
+// Display permissions - show only unique resources (not individual permissions)
+function displayPermissions(permissionsByResource) {
+    const container = document.getElementById('permissions-container');
+    
+    if (Object.keys(permissionsByResource).length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: #606060;">No permissions found.</div>';
+        return;
+    }
+    
+    // Get unique resources and their descriptions
+    // Use the first permission's description for each resource, or combine them
+    const resourceList = [];
+    for (const [resource, permissions] of Object.entries(permissionsByResource)) {
+        // Get a general description - use the first permission's description or create a generic one
+        let description = '';
+        if (permissions.length > 0 && permissions[0].description) {
+            // Try to extract a general description (remove action-specific parts)
+            description = permissions[0].description;
+            // If description contains the action, try to make it more general
+            description = description.replace(/\b(view|create|edit|delete|manage)\b/gi, '').trim();
+        }
+        
+        if (!description) {
+            description = `Access to ${resource.replace(/-/g, ' ')} features`;
+        }
+        
+        resourceList.push({
+            resource: resource,
+            description: description,
+            permissionCount: permissions.length
+        });
+    }
+    
+    // Sort by resource name
+    resourceList.sort((a, b) => a.resource.localeCompare(b.resource));
+    
+    // Build simple table showing only resources
+    let html = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Resource</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    resourceList.forEach(item => {
+        html += `
+            <tr>
+                <td><strong>${escapeHtml(item.resource)}</strong></td>
+                <td>${escapeHtml(item.description)}</td>
+            </tr>
+        `;
+    });
+    
+    html += `
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
+}
+
+
+// Utility functions
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showMessage(message, type) {
+    const msgDiv = document.createElement('div');
+    msgDiv.style.cssText = `padding: 15px; border-radius: 6px; margin-bottom: 20px; 
+                           background: ${type === 'success' ? '#d4edda' : '#f8d7da'}; 
+                           color: ${type === 'success' ? '#155724' : '#721c24'};`;
+    msgDiv.textContent = message;
+    const container = document.querySelector('.content-section');
+    container.insertBefore(msgDiv, container.firstChild);
+    setTimeout(() => msgDiv.remove(), 5000);
+}
+
+
+// Load permissions on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadPermissions();
+});
+</script>
+{% endblock %}

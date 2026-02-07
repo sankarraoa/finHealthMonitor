@@ -49,6 +49,58 @@ class Config:
     TOQAN_API_KEY: str = os.getenv("TOQAN_API_KEY", "")
     TOQAN_API_BASE_URL: str = os.getenv("TOQAN_API_BASE_URL", "https://api.coco.prod.toqan.ai/api")
     
+    # Database configuration
+    # Use local PostgreSQL if USE_LOCAL_DB is set to "true", otherwise use Railway
+    USE_LOCAL_DB: bool = os.getenv("USE_LOCAL_DB", "false").lower() == "true"
+    
+    # Local PostgreSQL connection string (default for macOS Homebrew installation)
+    # Uses current username since PostgreSQL on macOS typically creates DB with current user
+    _default_local_user = os.getenv("USER", os.getenv("USERNAME", "postgres"))
+    LOCAL_DATABASE_URL: str = os.getenv(
+        "LOCAL_DATABASE_URL",
+        f"postgresql://{_default_local_user}@localhost:5432/finhealthmonitor"
+    )
+    
+    # Railway PostgreSQL connection string
+    RAILWAY_DATABASE_URL: str = os.getenv(
+        "RAILWAY_DATABASE_URL",
+        "postgresql://postgres:nIrSLrxNUhzPghZJiuKVwGwcFMxiAzgh@metro.proxy.rlwy.net:10176/railway"
+    )
+    
+    # Legacy DATABASE_URL support (for backward compatibility)
+    # If DATABASE_URL is explicitly set, it takes precedence
+    _explicit_database_url: Optional[str] = os.getenv("DATABASE_URL")
+    
+    @property
+    def DATABASE_URL(self) -> str:
+        """Get the appropriate database URL based on configuration."""
+        # If DATABASE_URL is explicitly set, use it (backward compatibility)
+        if self._explicit_database_url:
+            url = self._explicit_database_url
+            # Validate that the URL doesn't contain placeholder values
+            if ':port' in url or '/port/' in url or url.endswith(':port'):
+                raise ValueError(
+                    "DATABASE_URL contains placeholder 'port' instead of actual port number. "
+                    "Please set DATABASE_URL with a real port number (e.g., 5432) or unset it "
+                    "and use USE_LOCAL_DB=true/false with LOCAL_DATABASE_URL/RAILWAY_DATABASE_URL instead."
+                )
+            return url
+        
+        # Otherwise, use local or Railway based on USE_LOCAL_DB flag
+        if self.USE_LOCAL_DB:
+            url = self.LOCAL_DATABASE_URL
+        else:
+            url = self.RAILWAY_DATABASE_URL
+        
+        # Validate that the URL doesn't contain placeholder values
+        if ':port' in url or '/port/' in url or url.endswith(':port'):
+            raise ValueError(
+                f"{'LOCAL_DATABASE_URL' if self.USE_LOCAL_DB else 'RAILWAY_DATABASE_URL'} contains placeholder 'port' instead of actual port number. "
+                f"Please set a valid database URL with a real port number (e.g., 5432 for local PostgreSQL)."
+            )
+        
+        return url
+    
     @classmethod
     def validate(cls) -> None:
         """Validate that required configuration values are set."""

@@ -66,13 +66,33 @@ class DataGatherer:
     # Aged receivables/payables will be fetched per contact after contacts are loaded
     AGED_REPORTS_REQUIRE_CONTACTS = True
     
-    def __init__(self, mcp_client: XeroMCPClient, use_cache: bool = True):
+    def __init__(self, mcp_client: XeroMCPClient, connection_id: Optional[str] = None, tenant_id: Optional[str] = None, use_cache: bool = True):
+        """
+        Initialize DataGatherer.
+        
+        Args:
+            mcp_client: MCP client for fetching data
+            connection_id: Connection ID for cache scoping (required if use_cache=True)
+            tenant_id: Tenant ID for cache scoping (required if use_cache=True)
+            use_cache: Whether to use cache
+        """
         self.mcp_client = mcp_client
+        self.connection_id = connection_id
+        self.tenant_id = tenant_id
         self.collected_data: Dict[str, Any] = {}
         self.data_completeness: Dict[str, bool] = {}
         self.use_cache = use_cache
-        self.cache = DataCache() if use_cache else None
+        self.cache = DataCache(connection_id=connection_id, tenant_id=tenant_id) if use_cache else None
         self.progress_callback: Optional[Callable[[int, str], None]] = None
+        
+        # Log initialization for debugging
+        if use_cache:
+            if connection_id and tenant_id:
+                logger.info(f"✅ DataGatherer initialized with cache enabled: connection_id={connection_id}, tenant_id={tenant_id}")
+            else:
+                logger.warning(f"⚠️ DataGatherer initialized with cache enabled but missing IDs: connection_id={connection_id}, tenant_id={tenant_id}")
+        else:
+            logger.info(f"DataGatherer initialized with cache disabled")
         
     def set_progress_callback(self, callback: Callable[[int, str], None]):
         """Set progress callback for data gathering."""
@@ -134,24 +154,27 @@ class DataGatherer:
                 
                 # Check cache first
                 if self.use_cache and self.cache:
-                    cached_data = self.cache.get(source_name)
-                    if cached_data is not None:
-                        logger.info(f"✓ Using cached data for {source_name}")
-                        data = cached_data.get("data") if isinstance(cached_data, dict) else cached_data
-                        # Mark as complete if we have cached data
-                        if data:
-                            self.collected_data[source_name] = data
-                            self.data_completeness[source_name] = True
-                            completed_sources += 1
-                            logger.info(f"✓ Successfully loaded {source_name} from cache: {len(data) if isinstance(data, list) else 1} items")
-                            if self.progress_callback:
-                                progress_pct = data_gathering_progress_base + int((completed_sources / total_sources) * (data_gathering_progress_max - data_gathering_progress_base))
-                                self.progress_callback(progress_pct, f"✅ {fun_message} (cached)")
-                        else:
-                            self.collected_data[source_name] = None
-                            self.data_completeness[source_name] = False
-                            logger.warning(f"✗ Cached data for {source_name} is empty")
-                        continue
+                    if not self.connection_id or not self.tenant_id:
+                        logger.warning(f"⚠️ Cache disabled for {source_name}: connection_id={self.connection_id}, tenant_id={self.tenant_id} not set")
+                    else:
+                        cached_data = self.cache.get(source_name)
+                        if cached_data is not None:
+                            logger.info(f"✓ Using cached data for {source_name}")
+                            data = cached_data.get("data") if isinstance(cached_data, dict) else cached_data
+                            # Mark as complete if we have cached data
+                            if data:
+                                self.collected_data[source_name] = data
+                                self.data_completeness[source_name] = True
+                                completed_sources += 1
+                                logger.info(f"✓ Successfully loaded {source_name} from cache: {len(data) if isinstance(data, list) else 1} items")
+                                if self.progress_callback:
+                                    progress_pct = data_gathering_progress_base + int((completed_sources / total_sources) * (data_gathering_progress_max - data_gathering_progress_base))
+                                    self.progress_callback(progress_pct, f"✅ {fun_message} (cached)")
+                            else:
+                                self.collected_data[source_name] = None
+                                self.data_completeness[source_name] = False
+                                logger.warning(f"✗ Cached data for {source_name} is empty")
+                            continue
                 
                 logger.info(f"Fetching {source_name} using {tool_name}...")
                 
@@ -179,8 +202,11 @@ class DataGatherer:
                 
                 # Cache the data after fetching
                 if self.use_cache and self.cache and data is not None:
-                    self.cache.set(source_name, data)
-                    logger.info(f"✓ Cached data for {source_name}")
+                    if self.connection_id and self.tenant_id:
+                        self.cache.set(source_name, data)
+                        logger.info(f"✓ Cached data for {source_name} (connection_id={self.connection_id}, tenant_id={self.tenant_id})")
+                    else:
+                        logger.warning(f"Cannot cache {source_name}: connection_id={self.connection_id}, tenant_id={self.tenant_id} not set")
                 
                 # Check if data contains error messages
                 if data:
@@ -506,8 +532,11 @@ class DataGatherer:
             self.data_completeness["aged_receivables"] = True
             # Cache the aged receivables data
             if self.use_cache and self.cache:
-                self.cache.set("aged_receivables", aged_receivables_all)
-                logger.info(f"✓ Cached aged receivables data")
+                if self.connection_id and self.tenant_id:
+                    self.cache.set("aged_receivables", aged_receivables_all)
+                    logger.info(f"✓ Cached aged receivables data (connection_id={self.connection_id}, tenant_id={self.tenant_id})")
+                else:
+                    logger.warning(f"Cannot cache aged_receivables: connection_id={self.connection_id}, tenant_id={self.tenant_id} not set")
             logger.info(f"✓ Collected aged receivables for {len(aged_receivables_all)} contacts")
         else:
             self.collected_data["aged_receivables"] = None
@@ -519,8 +548,11 @@ class DataGatherer:
             self.data_completeness["aged_payables"] = True
             # Cache the aged payables data
             if self.use_cache and self.cache:
-                self.cache.set("aged_payables", aged_payables_all)
-                logger.info(f"✓ Cached aged payables data")
+                if self.connection_id and self.tenant_id:
+                    self.cache.set("aged_payables", aged_payables_all)
+                    logger.info(f"✓ Cached aged payables data (connection_id={self.connection_id}, tenant_id={self.tenant_id})")
+                else:
+                    logger.warning(f"Cannot cache aged_payables: connection_id={self.connection_id}, tenant_id={self.tenant_id} not set")
             logger.info(f"✓ Collected aged payables for {len(aged_payables_all)} contacts")
         else:
             self.collected_data["aged_payables"] = None

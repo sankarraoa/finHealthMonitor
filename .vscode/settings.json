@@ -1,0 +1,15 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "metro.proxy.rlwy.net",
+            "port": 10176,
+            "driver": "PostgreSQL",
+            "name": "finHealth-railway",
+            "database": "railway",
+            "username": "postgres",
+            "password": "nIrSLrxNUhzPghZJiuKVwGwcFMxiAzgh"
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+# ============================================
+# Database Configuration
+# ============================================
+# Add these lines to your .env.example file
+
+# Set to "true" to use local PostgreSQL, "false" to use Railway PostgreSQL
+USE_LOCAL_DB=false
+
+# Local PostgreSQL connection string (used when USE_LOCAL_DB=true)
+# Default assumes PostgreSQL installed via Homebrew on macOS
+# Format: postgresql://username:password@host:port/database
+LOCAL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/finhealthmonitor
+
+# Railway PostgreSQL connection string (used when USE_LOCAL_DB=false)
+# Get this from your Railway project dashboard
+RAILWAY_DATABASE_URL=postgresql://postgres:password@host:port/railway
+
+# Legacy: If DATABASE_URL is set, it takes precedence over USE_LOCAL_DB
+# DATABASE_URL=postgresql://postgres:password@host:port/database
