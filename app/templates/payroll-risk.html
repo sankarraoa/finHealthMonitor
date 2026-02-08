@@ -8,9 +8,12 @@
 <div class="content-section">
     {% if view_mode == "list" %}
         <!-- List View -->
+        {% set payroll_risk_ui_flags = get_resource_ui_flags('payroll-risk') if get_resource_ui_flags else {'show_add': False} %}
         <div class="payroll-risk-header">
             <h2>Payroll Risk Early Warning</h2>
+            {% if payroll_risk_ui_flags.show_add %}
             <button class="btn btn-primary" onclick="openNewAnalysisModal()">+ New Analysis</button>
+            {% endif %}
         </div>
         
         <p>Payroll Risk Early Warning helps you identify potential cash flow issues before payroll dates. The system analyzes your current cash position, upcoming payroll obligations, and projected cash flow to provide early warnings and actionable recommendations.</p>
@@ -79,7 +82,9 @@
         {% else %}
         <div style="text-align: center; padding: 60px 20px;">
             <p>No payroll risk analyses yet.</p>
+            {% if payroll_risk_ui_flags.show_add %}
             <button class="btn btn-primary" onclick="openNewAnalysisModal()">Start Your First Analysis</button>
+            {% endif %}
         </div>
         {% endif %}
         

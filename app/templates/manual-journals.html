@@ -219,7 +219,10 @@
             {% endif %}
 
             <div style="margin-top: 30px;">
+                {% set manual_journals_ui_flags = get_resource_ui_flags('manual-journals') if get_resource_ui_flags else {'show_refresh': False} %}
+                {% if manual_journals_ui_flags.show_refresh %}
                 <a href="/manual-journals" class="btn btn-primary">Refresh</a>
+                {% endif %}
                 <a href="/home" class="btn btn-secondary">Back to Home</a>
             </div>
         </div>

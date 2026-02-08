@@ -14,19 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 class DataCache:
-    """PostgreSQL-based cache for MCP data, scoped by connection and tenant."""
+    """PostgreSQL-based cache for MCP data, scoped by connection and Xero tenant."""
     
-    def __init__(self, connection_id: Optional[str] = None, tenant_id: Optional[str] = None):
+    def __init__(self, connection_id: Optional[str] = None, xero_tenant_id: Optional[str] = None, tenant_id: Optional[str] = None):
         """
-        Initialize cache with connection and tenant context.
+        Initialize cache with connection and Xero tenant context.
         
         Args:
             connection_id: Connection ID (required for set operations)
-            tenant_id: Tenant ID (required for set operations)
+            xero_tenant_id: Xero/QuickBooks tenant ID (required for set operations)
+            tenant_id: B2B SaaS tenant ID (optional, for data segregation)
         """
         self.connection_id = connection_id
-        self.tenant_id = tenant_id
-        logger.info(f"DataCache initialized for connection_id={connection_id}, tenant_id={tenant_id}")
+        self.xero_tenant_id = xero_tenant_id  # Xero tenant ID
+        self.tenant_id = tenant_id  # B2B SaaS tenant ID (for data segregation)
+        logger.info(f"DataCache initialized for connection_id={connection_id}, xero_tenant_id={xero_tenant_id}, tenant_id={tenant_id}")
     
     def _get_db(self) -> Session:
         """Get database session."""
@@ -43,25 +45,31 @@ class DataCache:
         Returns:
             Dict with "data" and "cached_at" keys, or None if not found
         """
-        if not self.connection_id or not self.tenant_id:
-            logger.warning(f"Cannot get cache for key {key}: connection_id or tenant_id not set")
+        if not self.connection_id or not self.xero_tenant_id:
+            logger.warning(f"Cannot get cache for key {key}: connection_id or xero_tenant_id not set")
             return None
         
         from app.cache_manager import TwoTierCache
         
-        def _fetch_from_db(connection_id: str, tenant_id: str, cache_key: str):
+        def _fetch_from_db(connection_id: str, xero_tenant_id: str, cache_key: str):
             """Fetch from PostgreSQL database."""
             db = self._get_db()
             try:
                 # Optimize: Only fetch data and cached_at columns (not full row)
-                cache_entry = db.query(
+                query = db.query(
                     MCPDataCache.data,
                     MCPDataCache.cached_at
                 ).filter(
                     MCPDataCache.connection_id == connection_id,
-                    MCPDataCache.tenant_id == tenant_id,
+                    MCPDataCache.xero_tenant_id == xero_tenant_id,
                     MCPDataCache.cache_key == cache_key
-                ).first()
+                )
+                
+                # Filter by tenant_id (B2B SaaS) if available
+                if self.tenant_id:
+                    query = query.filter(MCPDataCache.tenant_id == self.tenant_id)
+                
+                cache_entry = query.first()
                 
                 if cache_entry:
                     logger.debug(f"Cache hit in PostgreSQL for key: {key}")
@@ -87,7 +95,7 @@ class DataCache:
         # Use two-tier cache (in-memory + PostgreSQL)
         return TwoTierCache.get_mcp_data(
             self.connection_id,
-            self.tenant_id,
+            self.xero_tenant_id,
             key,
             _fetch_from_db
         )
@@ -100,11 +108,11 @@ class DataCache:
             key: Cache key (e.g., "organisation", "accounts")
             value: Data to cache (will be JSON serialized)
         """
-        if not self.connection_id or not self.tenant_id:
-            logger.warning(f"Cannot set cache for key {key}: connection_id={self.connection_id}, tenant_id={self.tenant_id} not set")
+        if not self.connection_id or not self.xero_tenant_id:
+            logger.warning(f"Cannot set cache for key {key}: connection_id={self.connection_id}, xero_tenant_id={self.xero_tenant_id} not set")
             return
         
-        logger.info(f"Attempting to cache key={key} for connection_id={self.connection_id}, tenant_id={self.tenant_id}")
+        logger.info(f"Attempting to cache key={key} for connection_id={self.connection_id}, xero_tenant_id={self.xero_tenant_id}")
         
         db = self._get_db()
         try:
@@ -119,29 +127,33 @@ class DataCache:
             cached_at = datetime.utcnow().isoformat()
             
             # Check if entry exists
-            existing = db.query(MCPDataCache).filter(
+            query = db.query(MCPDataCache).filter(
                 MCPDataCache.connection_id == self.connection_id,
-                MCPDataCache.tenant_id == self.tenant_id,
+                MCPDataCache.xero_tenant_id == self.xero_tenant_id,
                 MCPDataCache.cache_key == key
-            ).first()
+            )
+            if self.tenant_id:
+                query = query.filter(MCPDataCache.tenant_id == self.tenant_id)
+            existing = query.first()
             
             if existing:
                 # Update existing entry
                 existing.data = data_json
                 existing.cached_at = cached_at
-                logger.info(f"Updated cache for key: {key} (connection_id={self.connection_id}, tenant_id={self.tenant_id})")
+                logger.info(f"Updated cache for key: {key} (connection_id={self.connection_id}, xero_tenant_id={self.xero_tenant_id})")
             else:
                 # Create new entry
                 cache_entry = MCPDataCache(
                     id=str(uuid.uuid4()),
+                    tenant_id=self.tenant_id,  # B2B SaaS tenant ID
                     connection_id=self.connection_id,
-                    tenant_id=self.tenant_id,
+                    xero_tenant_id=self.xero_tenant_id,  # Xero tenant ID
                     cache_key=key,
                     data=data_json,
                     cached_at=cached_at
                 )
                 db.add(cache_entry)
-                logger.info(f"Cached data for key: {key} (connection_id={self.connection_id}, tenant_id={self.tenant_id}, data_size={len(data_json)} bytes)")
+                logger.info(f"Cached data for key: {key} (connection_id={self.connection_id}, xero_tenant_id={self.xero_tenant_id}, data_size={len(data_json)} bytes)")
             
             db.commit()
             logger.info(f"✅ Successfully committed cache entry for key: {key} to PostgreSQL")
@@ -154,7 +166,7 @@ class DataCache:
                     "cached_at": cached_at
                 }
                 # Store in in-memory cache (already stored in DB above)
-                mcp_cache_key = TwoTierCache.get_mcp_cache_key(self.connection_id, self.tenant_id, key)
+                mcp_cache_key = TwoTierCache.get_mcp_cache_key(self.connection_id, self.xero_tenant_id, key)
                 from app.cache_manager import _mcp_cache
                 _mcp_cache.set(mcp_cache_key, cache_value)
                 logger.debug(f"✅ Also cached in memory: {key}")
@@ -180,16 +192,19 @@ class DataCache:
         Returns:
             True if cached data exists, False otherwise
         """
-        if not self.connection_id or not self.tenant_id:
+        if not self.connection_id or not self.xero_tenant_id:
             return False
         
         db = self._get_db()
         try:
-            exists = db.query(MCPDataCache).filter(
+            query = db.query(MCPDataCache).filter(
                 MCPDataCache.connection_id == self.connection_id,
-                MCPDataCache.tenant_id == self.tenant_id,
+                MCPDataCache.xero_tenant_id == self.xero_tenant_id,
                 MCPDataCache.cache_key == key
-            ).first() is not None
+            )
+            if self.tenant_id:
+                query = query.filter(MCPDataCache.tenant_id == self.tenant_id)
+            exists = query.first() is not None
             return exists
         except SQLAlchemyError as e:
             logger.error(f"Error checking cache for key {key}: {str(e)}")
@@ -252,7 +267,7 @@ class DataCache:
             if connection_id:
                 query = query.filter(MCPDataCache.connection_id == connection_id)
                 if tenant_id:
-                    query = query.filter(MCPDataCache.tenant_id == tenant_id)
+                    query = query.filter(MCPDataCache.xero_tenant_id == tenant_id)
             
             keys = [row[0] for row in query.distinct().all()]
             return keys
@@ -269,17 +284,20 @@ class DataCache:
         Args:
             key: Cache key to invalidate
         """
-        if not self.connection_id or not self.tenant_id:
-            logger.warning(f"Cannot invalidate cache for key {key}: connection_id or tenant_id not set")
+        if not self.connection_id or not self.xero_tenant_id:
+            logger.warning(f"Cannot invalidate cache for key {key}: connection_id or xero_tenant_id not set")
             return
         
         db = self._get_db()
         try:
-            deleted_count = db.query(MCPDataCache).filter(
+            query = db.query(MCPDataCache).filter(
                 MCPDataCache.connection_id == self.connection_id,
-                MCPDataCache.tenant_id == self.tenant_id,
+                MCPDataCache.xero_tenant_id == self.xero_tenant_id,
                 MCPDataCache.cache_key == key
-            ).delete()
+            )
+            if self.tenant_id:
+                query = query.filter(MCPDataCache.tenant_id == self.tenant_id)
+            deleted_count = query.delete()
             
             if deleted_count > 0:
                 db.commit()
@@ -308,7 +326,7 @@ class DataCache:
         try:
             cache_entry = db.query(MCPDataCache).filter(
                 MCPDataCache.connection_id == connection_id,
-                MCPDataCache.tenant_id == tenant_id,
+                MCPDataCache.xero_tenant_id == tenant_id,
                 MCPDataCache.cache_key == key
             ).first()
             

@@ -221,7 +221,10 @@
             {% endif %}
 
             <div style="margin-top: 30px;">
+                {% set bank_transactions_ui_flags = get_resource_ui_flags('bank-transactions') if get_resource_ui_flags else {'show_refresh': False} %}
+                {% if bank_transactions_ui_flags.show_refresh %}
                 <a href="/bank-transactions" class="btn btn-primary">Refresh</a>
+                {% endif %}
                 <a href="/home" class="btn btn-secondary">Back to Home</a>
             </div>
         </div>

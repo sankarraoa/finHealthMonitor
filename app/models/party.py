@@ -18,6 +18,10 @@ class Party(Base):
     name = Column(String(255), nullable=False)
     created_at = Column(String, nullable=False, default=lambda: datetime.utcnow().isoformat())
     updated_at = Column(String, nullable=False, default=lambda: datetime.utcnow().isoformat(), onupdate=lambda: datetime.utcnow().isoformat())
+    # These columns exist in parties table
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
+    modified_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
     
     __mapper_args__ = {
         'polymorphic_identity': 'party',
@@ -28,10 +32,10 @@ class Party(Base):
         return f"<Party(id={self.id}, type={self.party_type}, name={self.name})>"
 
 
-class Organization(Party):
-    """Organization model - represents tenant/customer companies."""
+class Tenant(Party):
+    """Tenant model - represents customer companies (B2B SaaS tenants)."""
     
-    __tablename__ = "organizations"
+    __tablename__ = "tenants"
     
     id = Column(String, ForeignKey("parties.id", ondelete="CASCADE"), primary_key=True)
     company_name = Column(String(255), nullable=False)
@@ -40,6 +44,9 @@ class Organization(Party):
     phone = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Note: tenant_id, created_by, modified_by are inherited from Party (parties table)
+    # We don't define them here to avoid SQLAlchemy trying to query non-existent columns in tenants table
+    # If you need separate columns in tenants table, add them via SQL migration
     
     # Relationships
     users = relationship("UserTenantRole", back_populates="tenant", cascade="all, delete-orphan")
@@ -50,10 +57,42 @@ class Organization(Party):
     __mapper_args__ = {
         'polymorphic_identity': 'organization',
         'inherit_condition': (id == Party.id),
+        # Explicitly configure columns to avoid warnings
+        # These columns exist in both parties and tenants tables
+        'exclude_properties': []  # Don't exclude anything, let SQLAlchemy handle it
     }
     
     def __repr__(self):
-        return f"<Organization(id={self.id}, name={self.company_name})>"
+        return f"<Tenant(id={self.id}, name={self.company_name})>"
+
+
+class Organization(Base):
+    """Organization model - represents organization entities (e.g., vendors, suppliers).
+    
+    This is a separate table from tenants. For every record in parties with 
+    party_type='organization', there should be a corresponding record in this table.
+    
+    The tenant_id field points to the B2B SaaS tenant (customer) that this organization
+    belongs to. For example, if OpenAI is a tenant and NVidia is a vendor organization,
+    then NVidia's organization record will have tenant_id pointing to OpenAI.
+    """
+    
+    __tablename__ = "organizations"
+    
+    id = Column(String, ForeignKey("parties.id", ondelete="CASCADE"), primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
+    modified_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
+    
+    # Relationships
+    party = relationship("Party", foreign_keys=[id], backref="organization")
+    tenant = relationship("Tenant", foreign_keys=[tenant_id], backref="organizations")
+    creator = relationship("Person", foreign_keys=[created_by], post_update=True)
+    modifier = relationship("Person", foreign_keys=[modified_by], post_update=True)
+    
+    def __repr__(self):
+        return f"<Organization(id={self.id}, name={self.name}, tenant_id={self.tenant_id})>"
 
 
 class Person(Party):
@@ -69,6 +108,14 @@ class Person(Party):
     password_hash = Column(String(255), nullable=True)  # Nullable for OAuth-only users
     phone = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # These columns exist in both parties table (inherited from Party) AND persons table (separate columns)
+    # SQLAlchemy will query both, which is what we want
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
+    modified_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
+    # Person also has created_at and modified_at (in persons table) - separate from Party's created_at/updated_at
+    created_at = Column(String, nullable=True)  # Timestamp when person record was created (in persons table)
+    modified_at = Column(String, nullable=True)  # Timestamp when person record was last modified (in persons table)
     
     # Relationships
     tenant_memberships = relationship(
@@ -82,6 +129,9 @@ class Person(Party):
     __mapper_args__ = {
         'polymorphic_identity': 'person',
         'inherit_condition': (id == Party.id),
+        # Explicitly configure columns to avoid warnings
+        # These columns exist in both parties and persons tables
+        'exclude_properties': []  # Don't exclude anything, let SQLAlchemy handle it
     }
     
     @property

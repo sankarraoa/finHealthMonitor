@@ -30,21 +30,29 @@ class PayrollRiskDB:
         connection_id: str,
         connection_name: str,
         tenant_id: Optional[str] = None,
-        tenant_name: Optional[str] = None
+        xero_tenant_id: Optional[str] = None,
+        xero_tenant_name: Optional[str] = None,
+        created_by: Optional[str] = None
     ) -> bool:
         """Create a new payroll risk analysis record."""
         db = self._get_db()
         try:
+            now = datetime.now().isoformat()
             analysis = PayrollRiskAnalysis(
                 id=analysis_id,
+                tenant_id=tenant_id,
                 connection_id=connection_id,
                 connection_name=connection_name,
-                tenant_id=tenant_id,
-                tenant_name=tenant_name,
+                xero_tenant_id=xero_tenant_id,
+                xero_tenant_name=xero_tenant_name,
                 status="running",
-                initiated_at=datetime.now().isoformat(),
+                initiated_at=now,
+                created_at=now,
+                modified_at=now,
                 progress=0,
-                progress_message="Initializing..."
+                progress_message="Initializing...",
+                created_by=created_by,
+                modified_by=created_by  # Set modified_by to created_by on creation
             )
             db.add(analysis)
             db.commit()
@@ -61,18 +69,26 @@ class PayrollRiskDB:
         self,
         analysis_id: str,
         progress: int,
-        progress_message: str
+        progress_message: str,
+        tenant_id: Optional[str] = None,
+        modified_by: Optional[str] = None
     ) -> bool:
         """Update progress for an analysis."""
         db = self._get_db()
         try:
-            analysis = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id).first()
+            query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
+            if tenant_id:
+                query = query.filter(PayrollRiskAnalysis.tenant_id == tenant_id)
+            analysis = query.first()
             if not analysis:
                 logger.warning(f"Analysis not found: {analysis_id}")
                 return False
             
             analysis.progress = progress
             analysis.progress_message = progress_message
+            if modified_by:
+                analysis.modified_by = modified_by
+                analysis.modified_at = datetime.now().isoformat()
             db.commit()
             return True
         except SQLAlchemyError as e:
@@ -85,12 +101,17 @@ class PayrollRiskDB:
     def complete_analysis(
         self,
         analysis_id: str,
-        result_data: Dict[str, Any]
+        result_data: Dict[str, Any],
+        organization_id: Optional[str] = None,
+        modified_by: Optional[str] = None
     ) -> bool:
         """Mark analysis as complete and store results."""
         db = self._get_db()
         try:
-            analysis = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id).first()
+            query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
+            if organization_id:
+                query = query.filter(PayrollRiskAnalysis.organization_id == organization_id)
+            analysis = query.first()
             if not analysis:
                 logger.warning(f"Analysis not found: {analysis_id}")
                 return False
@@ -100,6 +121,9 @@ class PayrollRiskDB:
             analysis.result_data = json.dumps(result_data)
             analysis.progress = 100
             analysis.progress_message = "Analysis complete"
+            if modified_by:
+                analysis.modified_by = modified_by
+                analysis.modified_at = datetime.now().isoformat()
             db.commit()
             logger.info(f"Completed payroll risk analysis: {analysis_id}")
             return True
@@ -113,12 +137,17 @@ class PayrollRiskDB:
     def fail_analysis(
         self,
         analysis_id: str,
-        error_message: str
+        error_message: str,
+        organization_id: Optional[str] = None,
+        modified_by: Optional[str] = None
     ) -> bool:
         """Mark analysis as failed."""
         db = self._get_db()
         try:
-            analysis = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id).first()
+            query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
+            if organization_id:
+                query = query.filter(PayrollRiskAnalysis.organization_id == organization_id)
+            analysis = query.first()
             if not analysis:
                 logger.warning(f"Analysis not found: {analysis_id}")
                 return False
@@ -127,6 +156,9 @@ class PayrollRiskDB:
             analysis.completed_at = datetime.now().isoformat()
             analysis.error_message = error_message
             analysis.progress_message = f"Error: {error_message}"
+            if modified_by:
+                analysis.modified_by = modified_by
+                analysis.modified_at = datetime.now().isoformat()
             db.commit()
             logger.info(f"Failed payroll risk analysis: {analysis_id}")
             return True
@@ -137,11 +169,19 @@ class PayrollRiskDB:
         finally:
             db.close()
     
-    def get_analysis(self, analysis_id: str) -> Optional[Dict[str, Any]]:
-        """Get a specific analysis by ID."""
+    def get_analysis(self, analysis_id: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get a specific analysis by ID.
+        
+        Args:
+            analysis_id: Analysis ID to fetch
+            tenant_id: Optional tenant ID to verify analysis belongs to this tenant
+        """
         db = self._get_db()
         try:
-            analysis = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id).first()
+            query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
+            if tenant_id:
+                query = query.filter(PayrollRiskAnalysis.tenant_id == tenant_id)
+            analysis = query.first()
             if not analysis:
                 return None
             
@@ -149,8 +189,9 @@ class PayrollRiskDB:
                 "id": analysis.id,
                 "connection_id": analysis.connection_id,
                 "connection_name": analysis.connection_name,
-                "tenant_id": analysis.tenant_id,
-                "tenant_name": analysis.tenant_name,
+                "xero_tenant_id": analysis.xero_tenant_id,
+                "xero_tenant_name": analysis.xero_tenant_name,
+                "tenant_name": analysis.xero_tenant_name,  # Add tenant_name alias for template compatibility
                 "status": analysis.status,
                 "initiated_at": analysis.initiated_at,
                 "completed_at": analysis.completed_at,
@@ -176,13 +217,23 @@ class PayrollRiskDB:
     
     def get_all_analyses(
         self,
+        tenant_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Get all analyses, ordered by initiated_at DESC."""
+        """Get all analyses, ordered by initiated_at DESC.
+        
+        Args:
+            tenant_id: Optional tenant ID to filter analyses. If provided, only returns analyses for this tenant.
+            limit: Optional limit on number of results
+            offset: Optional offset for pagination
+        """
         db = self._get_db()
         try:
-            query = db.query(PayrollRiskAnalysis).order_by(PayrollRiskAnalysis.initiated_at.desc())
+            query = db.query(PayrollRiskAnalysis)
+            if tenant_id:
+                query = query.filter(PayrollRiskAnalysis.tenant_id == tenant_id)
+            query = query.order_by(PayrollRiskAnalysis.initiated_at.desc())
             
             if offset:
                 query = query.offset(offset)
@@ -197,8 +248,8 @@ class PayrollRiskDB:
                     "id": analysis.id,
                     "connection_id": analysis.connection_id,
                     "connection_name": analysis.connection_name,
-                    "tenant_id": analysis.tenant_id,
-                    "tenant_name": analysis.tenant_name,
+                    "xero_tenant_id": analysis.xero_tenant_id,
+                    "tenant_name": analysis.xero_tenant_name,  # Use xero_tenant_name for display
                     "status": analysis.status,
                     "initiated_at": analysis.initiated_at,
                     "completed_at": analysis.completed_at,
@@ -224,11 +275,14 @@ class PayrollRiskDB:
         finally:
             db.close()
     
-    def delete_analysis(self, analysis_id: str) -> bool:
+    def delete_analysis(self, analysis_id: str, tenant_id: Optional[str] = None) -> bool:
         """Delete an analysis."""
         db = self._get_db()
         try:
-            analysis = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id).first()
+            query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
+            if tenant_id:
+                query = query.filter(PayrollRiskAnalysis.tenant_id == tenant_id)
+            analysis = query.first()
             if not analysis:
                 logger.warning(f"Analysis not found: {analysis_id}")
                 return False

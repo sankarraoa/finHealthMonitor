@@ -106,6 +106,7 @@
     <h2>Connections</h2>
     <p>Manage your integrations and connections.</p>
 
+            {% set conn_ui_flags = get_resource_ui_flags('connections') if get_resource_ui_flags else {'show_add': False, 'show_edit': False, 'show_refresh': False, 'show_add_tenant': False, 'show_remove': False} %}
             {% for category_key, category_info in categories.items() %}
             <div class="category-section">
                 <div class="category-header">
@@ -120,9 +121,11 @@
                                 <div class="connection-name">
                                     <div class="connection-name-display">
                                         <span id="name-display-{{ connection.id }}">{{ connection.name }}</span>
+                                        {% if conn_ui_flags.show_edit %}
                                         <a href="#" class="edit-icon-link" onclick="event.preventDefault(); editConnectionName('{{ connection.id }}'); return false;" title="Edit name">
                                             <i class="las la-edit"></i>
                                         </a>
+                                        {% endif %}
                                     </div>
                                     <div class="connection-name-edit" id="name-edit-{{ connection.id }}">
                                         <input type="text" id="name-input-{{ connection.id }}" value="{{ connection.name }}" />
@@ -159,6 +162,7 @@
                             </div>
                             <div class="connection-actions">
                                 {% if connection.access_token %}
+                                    {% if conn_ui_flags.show_refresh %}
                                     {% if connection.get('token_expired') %}
                                     <form method="post" action="/connections/{{ connection.id }}/refresh" style="margin: 0; display: inline;">
                                         <button type="submit" class="icon-action-link" title="Refresh Expired Token" style="background: none; border: none; padding: 0; cursor: pointer;">
@@ -172,27 +176,32 @@
                                         </button>
                                     </form>
                                     {% endif %}
-                                    {% if connection.software == 'xero' %}
+                                    {% endif %}
+                                    {% if connection.software == 'xero' and conn_ui_flags.show_add_tenant %}
                                     <form method="post" action="/connections/{{ connection.id }}/add-tenant" style="margin: 0; display: inline;">
                                         <button type="submit" class="icon-action-link" title="Add Tenant" style="background: none; border: none; padding: 0; cursor: pointer;">
                                             <i class="las la-plus-circle"></i>
                                         </button>
                                     </form>
                                     {% endif %}
+                                    {% if conn_ui_flags.show_remove %}
                                     <form method="post" action="/connections/{{ connection.id }}/disconnect-all" style="margin: 0; display: inline;">
                                         <button type="submit" class="icon-action-link danger" title="Disconnect All" onclick="return confirm('Are you sure you want to disconnect all tenants? This will revoke access with Xero for all tenants.')" style="background: none; border: none; padding: 0; cursor: pointer;">
                                             <i class="las la-unlink"></i>
                                         </button>
                                     </form>
+                                    {% endif %}
                                 {% else %}
                                 <a href="/connections/{{ connection.id }}/connect" class="btn btn-primary" title="Connect" style="width: auto; height: auto; padding: 8px 16px; text-decoration: none;">
                                     Connect
                                 </a>
+                                {% if conn_ui_flags.show_remove %}
                                 <form method="post" action="/connections/{{ connection.id }}/delete" style="margin: 0; display: inline;">
                                     <button type="submit" class="btn btn-secondary" title="Delete" onclick="return confirm('Are you sure you want to delete this connection?')" style="width: auto; height: auto; padding: 8px 16px; background: #dc3545;">
                                         Delete
                                     </button>
                                 </form>
+                                {% endif %}
                                 {% endif %}
                             </div>
                         </div>
@@ -204,12 +213,14 @@
                                 <li class="tenant-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; margin-bottom: 8px; background: #F5F6FA; border-radius: 8px; border: 0.3px solid #E0E0E0;">
                                     <span style="font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-style: normal; font-weight: 600; font-size: 16px; line-height: 22px; color: #202224;">{{ tenant.get('tenant_name', 'Unknown') }}</span>
                                     <span style="font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-style: normal; font-weight: 400; font-size: 14px; line-height: 19px; color: #606060; margin-left: 12px;">({{ tenant.get('tenant_id', '')[:8] }}...)</span>
+                                    {% if conn_ui_flags.show_remove %}
                                     <form method="post" action="/connections/{{ connection.id }}/remove-tenant" style="margin: 0 0 0 16px; display: inline;">
                                         <input type="hidden" name="tenant_id" value="{{ tenant.get('tenant_id') }}" />
                                         <button type="submit" class="remove-icon-link" title="Remove Tenant" onclick="return confirm('Are you sure you want to remove this tenant? This will disconnect it from Xero.')" style="background: none; border: none; padding: 0; cursor: pointer;">
                                             <i class="las la-times-circle"></i>
                                         </button>
                                     </form>
+                                    {% endif %}
                                 </li>
                                 {% endfor %}
                             </ul>
@@ -220,11 +231,13 @@
                 {% endif %}
 
                 <!-- Add Connection Button for this category -->
+                {% if conn_ui_flags.show_add %}
                 <div style="margin-top: 15px;">
                     <button class="btn btn-primary" data-category="{{ category_key }}" type="button" style="width: auto; height: auto; padding: 8px 16px;">
                         <i class="las la-plus-circle" style="margin-right: 8px;"></i> Add Connection
                     </button>
                 </div>
+                {% endif %}
             </div>
             {% endfor %}
         </div>

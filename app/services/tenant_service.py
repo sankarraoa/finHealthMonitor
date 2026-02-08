@@ -1,7 +1,7 @@
-"""Service for tenant (Organization) management."""
+"""Service for tenant management."""
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.models.party import Organization
+from app.models.party import Tenant
 import uuid
 from datetime import datetime
 
@@ -12,16 +12,18 @@ def create_tenant(
     tax_id: Optional[str] = None,
     address: Optional[dict] = None,
     phone: Optional[str] = None,
-    email: Optional[str] = None
-) -> Organization:
-    """Create a new tenant organization."""
+    email: Optional[str] = None,
+    parent_tenant_id: Optional[str] = None,
+    created_by: Optional[str] = None
+) -> Tenant:
+    """Create a new tenant."""
     from app.models.party import Party
     
     now = datetime.utcnow().isoformat()
     tenant_id = str(uuid.uuid4())
     
-    # Create Organization - SQLAlchemy will automatically create Party record due to inheritance
-    tenant = Organization(
+    # Create Tenant - SQLAlchemy will automatically create Party record due to inheritance
+    tenant = Tenant(
         id=tenant_id,
         company_name=company_name,
         tax_id=tax_id,
@@ -35,6 +37,9 @@ def create_tenant(
     tenant.name = company_name
     tenant.created_at = now
     tenant.updated_at = now
+    tenant.tenant_id = parent_tenant_id
+    tenant.created_by = created_by
+    tenant.modified_by = created_by  # Set modified_by to created_by on creation
     
     db.add(tenant)
     db.commit()
@@ -42,19 +47,19 @@ def create_tenant(
     return tenant
 
 
-def get_tenant_by_id(db: Session, tenant_id: str) -> Optional[Organization]:
+def get_tenant_by_id(db: Session, tenant_id: str) -> Optional[Tenant]:
     """Get tenant by ID."""
-    return db.query(Organization).filter(Organization.id == tenant_id).first()
+    return db.query(Tenant).filter(Tenant.id == tenant_id).first()
 
 
-def get_tenant_by_name(db: Session, company_name: str) -> Optional[Organization]:
+def get_tenant_by_name(db: Session, company_name: str) -> Optional[Tenant]:
     """Get tenant by company name."""
-    return db.query(Organization).filter(Organization.company_name == company_name).first()
+    return db.query(Tenant).filter(Tenant.company_name == company_name).first()
 
 
-def list_tenants(db: Session, skip: int = 0, limit: int = 100) -> List[Organization]:
+def list_tenants(db: Session, skip: int = 0, limit: int = 100) -> List[Tenant]:
     """List all active tenants."""
-    return db.query(Organization).filter(Organization.is_active == True).offset(skip).limit(limit).all()
+    return db.query(Tenant).filter(Tenant.is_active == True).offset(skip).limit(limit).all()
 
 
 def update_tenant(
@@ -65,8 +70,9 @@ def update_tenant(
     address: Optional[dict] = None,
     phone: Optional[str] = None,
     email: Optional[str] = None,
-    is_active: Optional[bool] = None
-) -> Optional[Organization]:
+    is_active: Optional[bool] = None,
+    modified_by: Optional[str] = None
+) -> Optional[Tenant]:
     """Update tenant information."""
     tenant = get_tenant_by_id(db, tenant_id)
     if not tenant:
@@ -87,6 +93,8 @@ def update_tenant(
         tenant.is_active = is_active
     
     tenant.updated_at = datetime.utcnow().isoformat()
+    if modified_by:
+        tenant.modified_by = modified_by
     db.commit()
     db.refresh(tenant)
     return tenant

@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models.party import Person, Organization
-from app.auth.session import get_current_user_id, get_current_tenant_id
+from app.models.party import Person, Tenant
+from app.auth.session import get_current_user_id, get_current_tenant_id, get_current_tenant_id_from_session
 
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> Person:
@@ -27,7 +27,7 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> P
     return user
 
 
-async def get_current_tenant(request: Request, db: Session = Depends(get_db)) -> Organization:
+async def get_current_tenant(request: Request, db: Session = Depends(get_db)) -> Tenant:
     """Get the current tenant from session."""
     tenant_id = get_current_tenant_id(request)
     if not tenant_id:
@@ -36,7 +36,7 @@ async def get_current_tenant(request: Request, db: Session = Depends(get_db)) ->
             detail="No tenant context set"
         )
     
-    tenant = db.query(Organization).filter(Organization.id == tenant_id).first()
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant or not tenant.is_active:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -55,9 +55,9 @@ async def require_authentication(
 
 async def require_tenant_membership(
     user: Person = Depends(get_current_user),
-    tenant: Organization = Depends(get_current_tenant),
+    tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db)
-) -> tuple[Person, Organization]:
+) -> tuple[Person, Tenant]:
     """Dependency to require user belongs to tenant."""
     from app.models.rbac import UserTenantRole
     
@@ -74,3 +74,48 @@ async def require_tenant_membership(
         )
     
     return user, tenant
+
+
+async def get_current_tenant_id_dep(request: Request) -> str:
+    """Dependency to get current tenant ID from session. Raises error if not set."""
+    tenant_id = get_current_tenant_id(request)
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No tenant context set. Please log in."
+        )
+    return tenant_id
+
+
+def get_session_context(request: Request) -> tuple[Optional[str], Optional[str]]:
+    """
+    Get tenant_id and person_id from session.
+    
+    Returns:
+        Tuple of (tenant_id, person_id). Both can be None if not in session.
+    """
+    from app.auth.session import get_current_tenant_id, get_current_user_id
+    tenant_id = get_current_tenant_id(request)
+    person_id = get_current_user_id(request)
+    return tenant_id, person_id
+
+
+async def get_session_context_dep(request: Request) -> tuple[str, str]:
+    """
+    Dependency to get tenant_id and person_id from session. Raises error if not set.
+    
+    Returns:
+        Tuple of (tenant_id, person_id)
+    """
+    tenant_id, person_id = get_session_context(request)
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No tenant context set. Please log in."
+        )
+    if not person_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated. Please log in."
+        )
+    return tenant_id, person_id

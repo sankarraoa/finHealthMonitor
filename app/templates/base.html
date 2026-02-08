@@ -30,70 +30,113 @@
                     <i class="las la-clock sidebar-menu-icon"></i>
                     Dashboard
                 </a>
+                {% if user_resources is defined and 'favorites' in user_resources %}
                 <a href="/favorites" class="sidebar-menu-item" id="nav-favorites">
                     <i class="las la-heart sidebar-menu-icon"></i>
                     Favorites
                 </a>
+                {% endif %}
             </div>
 
             <div class="sidebar-divider"></div>
 
+            {% set has_revenue_risk = user_resources is defined and 'revenue-concentration-risk' in user_resources %}
+            {% set has_margin_drift = user_resources is defined and 'margin-drift' in user_resources %}
+            {% set has_financial_health = has_revenue_risk or has_margin_drift %}
+            
+            {% if has_financial_health %}
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Financial Health</div>
+                {% if has_revenue_risk %}
                 <a href="/financial-health/revenue-concentration-risk" class="sidebar-menu-item" id="nav-revenue-risk">
                     <i class="las la-dollar-sign sidebar-menu-icon"></i>
                     Revenue Concentration Risk
                 </a>
+                {% endif %}
+                {% if has_margin_drift %}
                 <a href="/financial-health/margin-drift" class="sidebar-menu-item" id="nav-margin-drift">
                     <i class="las la-chart-line sidebar-menu-icon"></i>
                     Margin Drift
                 </a>
+                {% endif %}
             </div>
 
             <div class="sidebar-divider"></div>
+            {% endif %}
 
+            {% set has_payroll_risk = user_resources is defined and 'payroll-risk' in user_resources %}
+            {% set has_cash_strain = user_resources is defined and 'cash-strain' in user_resources %}
+            {% set has_cash_flow = has_payroll_risk or has_cash_strain %}
+            
+            {% if has_cash_flow %}
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Cash Flow Advisory</div>
+                {% if has_payroll_risk %}
                 <a href="/payroll-risk" class="sidebar-menu-item" id="nav-payroll-risk">
                     <i class="las la-clock sidebar-menu-icon"></i>
                     Payroll Risk
                 </a>
+                {% endif %}
+                {% if has_cash_strain %}
                 <a href="/cash-flow-advisory/cash-strain" class="sidebar-menu-item" id="nav-cash-strain">
                     <i class="las la-exclamation-circle sidebar-menu-icon"></i>
                     Cash Strain
                 </a>
+                {% endif %}
             </div>
 
             <div class="sidebar-divider"></div>
+            {% endif %}
 
+            {% set has_expense_creep = user_resources is defined and 'expense-creep' in user_resources %}
+            {% set has_customer_profitability = user_resources is defined and 'customer-profitability' in user_resources %}
+            {% set has_profitability = has_expense_creep or has_customer_profitability %}
+            
+            {% if has_profitability %}
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Profitability and Cost Analysis</div>
+                {% if has_expense_creep %}
                 <a href="/profitability/expense-creep" class="sidebar-menu-item" id="nav-expense-creep">
                     <i class="las la-arrow-up sidebar-menu-icon"></i>
                     Expense Creep
                 </a>
+                {% endif %}
+                {% if has_customer_profitability %}
                 <a href="/profitability/customer-profitability" class="sidebar-menu-item" id="nav-customer-profitability">
                     <i class="las la-users sidebar-menu-icon"></i>
                     Customer Level Profitability
                 </a>
+                {% endif %}
             </div>
 
             <div class="sidebar-divider"></div>
+            {% endif %}
 
+            {% set has_tax_liability = user_resources is defined and 'tax-liability' in user_resources %}
+            {% set has_capital_timing = user_resources is defined and 'capital-purchase-timing' in user_resources %}
+            {% set has_tax_planning = has_tax_liability or has_capital_timing %}
+            
+            {% if has_tax_planning %}
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Tax Planning and Projection</div>
+                {% if has_tax_liability %}
                 <a href="/tax-planning/tax-liability" class="sidebar-menu-item" id="nav-tax-liability">
                     <i class="las la-file-invoice-dollar sidebar-menu-icon"></i>
                     Tax Liability
                 </a>
+                {% endif %}
+                {% if has_capital_timing %}
                 <a href="/tax-planning/capital-purchase-timing" class="sidebar-menu-item" id="nav-capital-timing">
                     <i class="las la-calendar-alt sidebar-menu-icon"></i>
                     Capital Purchase Timing
                 </a>
+                {% endif %}
             </div>
 
             <div class="sidebar-divider"></div>
+            {% endif %}
 
+            {% if user_resources is defined and 'connections' in user_resources %}
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Settings</div>
                 <a href="/connections" class="sidebar-menu-item" id="nav-connections">
@@ -103,6 +146,7 @@
             </div>
 
             <div class="sidebar-divider"></div>
+            {% endif %}
 
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Security</div>
@@ -120,27 +164,43 @@
                 </a>
             </div>
 
+            {% set has_accounts = user_resources is defined and 'accounts' in user_resources %}
+            {% set has_invoices = user_resources is defined and 'invoices' in user_resources %}
+            {% set has_manual_journals = user_resources is defined and 'manual-journals' in user_resources %}
+            {% set has_bank_transactions = user_resources is defined and 'bank-transactions' in user_resources %}
+            {% set has_others_items = has_accounts or has_invoices or has_manual_journals or has_bank_transactions %}
+            
+            {% if has_others_items %}
             <div class="sidebar-divider"></div>
 
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Others</div>
+                {% if has_accounts %}
                 <a href="/accounts" class="sidebar-menu-item" id="nav-accounts">
                     <i class="las la-chart-bar sidebar-menu-icon"></i>
                     Chart of Accounts
                 </a>
+                {% endif %}
+                {% if has_invoices %}
                 <a href="/invoices" class="sidebar-menu-item" id="nav-invoices">
                     <i class="las la-file-invoice sidebar-menu-icon"></i>
                     Outstanding Invoices
                 </a>
+                {% endif %}
+                {% if has_manual_journals %}
                 <a href="/manual-journals" class="sidebar-menu-item" id="nav-manual-journals">
                     <i class="las la-book sidebar-menu-icon"></i>
                     Manual Journals
                 </a>
+                {% endif %}
+                {% if has_bank_transactions %}
                 <a href="/bank-transactions" class="sidebar-menu-item" id="nav-bank-transactions">
                     <i class="las la-credit-card sidebar-menu-icon"></i>
                     Bank Transactions
                 </a>
+                {% endif %}
             </div>
+            {% endif %}
         </nav>
 
         <div class="content-wrapper">
@@ -164,12 +224,17 @@
                 <div class="header-profile-container">
                     <div class="header-profile" id="headerProfile">
                         <div class="header-profile-avatar">
-                            <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop&crop=face" alt="Veda Valli avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                            <div class="header-profile-avatar-fallback" style="display: none;">VV</div>
+                            {% if current_user and current_user.image_url %}
+                            <img src="{{ current_user.image_url }}" alt="{{ current_user.full_name }} avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div class="header-profile-avatar-fallback" style="display: none;">{{ current_user.initials }}</div>
+                            {% else %}
+                            <img src="" alt="{{ current_user.full_name if current_user else 'User' }} avatar" style="display: none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div class="header-profile-avatar-fallback">{{ current_user.initials if current_user else 'U' }}</div>
+                            {% endif %}
                         </div>
                         <div class="header-profile-info">
-                            <div class="header-profile-name">Veda Valli</div>
-                            <div class="header-profile-role">Admin</div>
+                            <div class="header-profile-name">{{ current_user.full_name if current_user else 'User' }}</div>
+                            <div class="header-profile-role">{{ current_user.role if current_user else 'User' }}</div>
                         </div>
                         <button class="header-profile-dropdown" aria-label="Profile menu">
                             <svg class="header-profile-dropdown-border" width="19" height="19" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -10,7 +10,9 @@ def create_permission(
     db: Session,
     resource: str,
     action: str,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    created_by: Optional[str] = None
 ) -> Permission:
     """Create a new permission."""
     now = datetime.utcnow().isoformat()
@@ -20,8 +22,11 @@ def create_permission(
         resource=resource,
         action=action,
         description=description,
+        tenant_id=tenant_id,
         created_at=now,
-        updated_at=now
+        updated_at=now,
+        created_by=created_by,
+        modified_by=created_by  # Set modified_by to created_by on creation
     )
     
     db.add(permission)
@@ -63,10 +68,12 @@ def get_or_create_permission(
     db: Session,
     resource: str,
     action: str,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    created_by: Optional[str] = None
 ) -> Permission:
     """Get existing permission or create if it doesn't exist."""
     permission = get_permission_by_resource_action(db, resource, action)
     if permission:
         return permission
-    return create_permission(db, resource, action, description)
+    return create_permission(db, resource, action, description, organization_id=organization_id, created_by=created_by)

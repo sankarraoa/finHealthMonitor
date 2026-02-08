@@ -1,12 +1,13 @@
 """RBAC API routes."""
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
 from app.database import get_db
 from app.auth.dependencies import get_current_user, get_current_tenant, require_tenant_membership
-from app.models.party import Person, Organization
+from app.models.party import Person, Tenant
 from app.models.rbac import UserTenantRole, TenantRole
 from app.services import tenant_service, user_service, role_service, permission_service
 
@@ -114,9 +115,12 @@ class AssignPermissionToRole(BaseModel):
 async def register_user(
     user_data: UserCreate,
     tenant_id: Optional[str] = None,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """Register a new user. If tenant_id is provided, user is added to that tenant."""
+    from app.auth.session import get_current_tenant_id, get_current_user_id
+    
     # Check if user already exists
     existing_user = user_service.get_user_by_email(db, user_data.email)
     if existing_user:
@@ -125,6 +129,13 @@ async def register_user(
             detail="User with this email already exists"
         )
     
+    # Get tenant_id and created_by from session if available
+    tenant_id = None
+    created_by = None
+    if request:
+        tenant_id = get_current_tenant_id(request)
+        created_by = get_current_user_id(request)
+    
     # Create user
     user = user_service.create_user(
         db,
@@ -132,11 +143,13 @@ async def register_user(
         first_name=user_data.first_name,
         last_name=user_data.last_name,
         password=user_data.password,
-        phone=user_data.phone
+        phone=user_data.phone,
+        tenant_id=tenant_id,
+        created_by=created_by
     )
     
     # If tenant_id provided, add user to tenant with default role (or create tenant)
-    if tenant_id:
+    if tenant_id:  # Keep parameter name for backward compatibility, but treat as tenant_id
         tenant = tenant_service.get_tenant_by_id(db, tenant_id)
         if tenant:
             # Get or create default role (Administrator)
@@ -150,9 +163,13 @@ async def register_user(
 @router.post("/auth/login", response_model=dict)
 async def login_user(
     credentials: UserLogin,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """Login user with email and password."""
+    from app.auth.session import create_user_session
+    
     user = user_service.authenticate_user(db, credentials.email, credentials.password)
     if not user:
         raise HTTPException(
@@ -163,31 +180,54 @@ async def login_user(
     # Get user's tenants
     tenants = user_service.get_user_tenants(db, user.id)
     
-    return {
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "full_name": user.full_name
-        },
-        "tenants": [
-            {
-                "id": t.id,
-                "company_name": t.company_name
-            }
-            for t in tenants
-        ]
-    }
+    # Set default tenant (first one, or getGo if available)
+    default_tenant = None
+    if tenants:
+        # Prefer getGo if available
+        getgo_tenant = next((t for t in tenants if t.company_name.lower() == "getgo"), None)
+        default_tenant = getgo_tenant if getgo_tenant else tenants[0]
+    
+    # Create session with user and tenant
+    create_user_session(request, user, default_tenant)
+    
+    # Explicitly save session to ensure cookie is set
+    # The session middleware should handle this, but we'll ensure it's saved
+    request.session.setdefault("_session_modified", True)
+    
+    return JSONResponse(
+        content={
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "full_name": user.full_name
+            },
+            "tenants": [
+                {
+                    "id": t.id,
+                    "company_name": t.company_name
+                }
+                for t in tenants
+            ],
+            "default_tenant": {
+                "id": default_tenant.id,
+                "company_name": default_tenant.company_name
+            } if default_tenant else None
+        }
+    )
 
 
 # Tenant routes
 @router.post("/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
     tenant_data: TenantCreate,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
-    """Create a new tenant organization."""
+    """Create a new tenant (customer company)."""
+    from app.auth.session import get_current_tenant_id, get_current_user_id
+    
     # Check if tenant already exists
     existing = tenant_service.get_tenant_by_name(db, tenant_data.company_name)
     if existing:
@@ -196,16 +236,29 @@ async def create_tenant(
             detail="Tenant with this name already exists"
         )
     
+    # Get parent_tenant_id and created_by from session
+    parent_tenant_id = None
+    created_by = None
+    try:
+        if request:
+            parent_tenant_id = get_current_tenant_id(request)
+            created_by = get_current_user_id(request)
+    except Exception as e:
+        print(f"Warning: Could not get session values: {e}")
+        pass
+    
     tenant = tenant_service.create_tenant(
         db,
         company_name=tenant_data.company_name,
         tax_id=tenant_data.tax_id,
         phone=tenant_data.phone,
-        email=tenant_data.email
+        email=tenant_data.email,
+        parent_tenant_id=parent_tenant_id,
+        created_by=created_by
     )
     
     # Create default roles for tenant
-    role_service.create_default_roles_for_tenant(db, tenant.id, permission_service)
+    role_service.create_default_roles_for_tenant(db, tenant.id, permission_service, created_by=created_by)
     
     return tenant
 
@@ -317,9 +370,12 @@ async def update_user_in_tenant(
     tenant_id: str,
     user_id: str,
     user_data: UserUpdate,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """Update a user in a tenant."""
+    from app.auth.session import get_current_user_id
+    
     tenant = tenant_service.get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(
@@ -346,6 +402,15 @@ async def update_user_in_tenant(
             detail="User not found in this tenant"
         )
     
+    # Get modified_by from session
+    modified_by = None
+    try:
+        if request:
+            modified_by = get_current_user_id(request)
+    except Exception as e:
+        print(f"Warning: Could not get session values: {e}")
+        pass
+    
     updated_user = user_service.update_user(
         db,
         user_id,
@@ -353,7 +418,8 @@ async def update_user_in_tenant(
         last_name=user_data.last_name,
         phone=user_data.phone,
         image_url=user_data.image_url,
-        password=user_data.password
+        password=user_data.password,
+        modified_by=modified_by
     )
     
     return updated_user
@@ -399,7 +465,7 @@ async def assign_role_to_user(
     role_id: str,
     db: Session = Depends(get_db)
 ):
-    """Assign a role to a user in a tenant."""
+    """Assign a role to a user in an tenant."""
     tenant = tenant_service.get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(
@@ -442,7 +508,7 @@ async def remove_role_from_user(
     role_id: str,
     db: Session = Depends(get_db)
 ):
-    """Remove a role from a user in a tenant."""
+    """Remove a role from a user in an tenant."""
     membership = db.query(UserTenantRole).filter(
         UserTenantRole.user_id == user_id,
         UserTenantRole.tenant_id == tenant_id,
@@ -478,11 +544,17 @@ async def add_user_to_tenant(
             detail="Tenant not found"
         )
     
-    # Get current user if authenticated (optional)
+    # Get tenant_id and created_by from session
+    from app.auth.session import get_current_tenant_id
     current_user_id = None
+    session_tenant_id = None
     try:
-        current_user_id = get_current_user_id(request) if request else None
-    except:
+        if request:
+            current_user_id = get_current_user_id(request)
+            session_tenant_id = get_current_tenant_id(request)
+    except Exception as e:
+        # Log the error for debugging but continue
+        print(f"Warning: Could not get session values: {e}")
         pass  # Not authenticated, which is OK for this endpoint
     
     # Get or create user
@@ -494,7 +566,9 @@ async def add_user_to_tenant(
             first_name=user_data.first_name,
             last_name=user_data.last_name,
             password=user_data.password,
-            phone=user_data.phone
+            phone=user_data.phone,
+            tenant_id=session_tenant_id or tenant_id,  # Use tenant_id as fallback
+            created_by=current_user_id
         )
     
     # Get default role if not provided
@@ -543,7 +617,7 @@ async def list_roles_in_tenant(
     tenant_id: str,
     db: Session = Depends(get_db)
 ):
-    """List all roles in a tenant."""
+    """List all roles in an tenant."""
     tenant = tenant_service.get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(
@@ -558,9 +632,12 @@ async def list_roles_in_tenant(
 async def create_role_in_tenant(
     tenant_id: str,
     role_data: RoleCreate,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
-    """Create a new role in a tenant."""
+    """Create a new role in an tenant."""
+    from app.auth.session import get_current_tenant_id, get_current_user_id
+    
     tenant = tenant_service.get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(
@@ -576,11 +653,23 @@ async def create_role_in_tenant(
             detail="Role with this name already exists in tenant"
         )
     
+    # Get tenant_id and created_by from session
+    session_tenant_id = None
+    created_by = None
+    try:
+        if request:
+            session_tenant_id = get_current_tenant_id(request)
+            created_by = get_current_user_id(request)
+    except Exception as e:
+        print(f"Warning: Could not get session values: {e}")
+        pass
+    
     return role_service.create_role(
         db,
         tenant_id=tenant_id,
         name=role_data.name,
-        description=role_data.description
+        description=role_data.description,
+        created_by=created_by
     )
 
 
@@ -688,9 +777,12 @@ async def list_permissions(
 @router.post("/permissions", status_code=status.HTTP_201_CREATED, response_model=PermissionResponse)
 async def create_permission(
     data: PermissionCreate,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """Create a new permission."""
+    from app.auth.session import get_current_tenant_id, get_current_user_id
+    
     # Check if permission already exists
     existing = permission_service.get_permission_by_resource_action(db, data.resource, data.action)
     if existing:
@@ -699,7 +791,25 @@ async def create_permission(
             detail="Permission with this resource and action already exists"
         )
     
-    return permission_service.create_permission(db, data)
+    # Get tenant_id and created_by from session
+    tenant_id = None
+    created_by = None
+    try:
+        if request:
+            tenant_id = get_current_tenant_id(request)
+            created_by = get_current_user_id(request)
+    except Exception as e:
+        print(f"Warning: Could not get session values: {e}")
+        pass
+    
+    return permission_service.create_permission(
+        db,
+        resource=data.resource,
+        action=data.action,
+        description=data.description,
+        tenant_id=tenant_id,
+        created_by=created_by
+    )
 
 
 @router.get("/permissions/{permission_id}", response_model=PermissionResponse)

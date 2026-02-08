@@ -32,12 +32,12 @@ class Permission(Base):
 
 
 class TenantRole(Base):
-    """Role model scoped to a specific tenant."""
+    """Role model scoped to a specific tenant (customer company)."""
     
     __tablename__ = "tenant_roles"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    tenant_id = Column(String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False)  # e.g., "Administrator", "IT Administrator"
     description = Column(String(500), nullable=True)
     is_system_role = Column(String(10), default='false', nullable=False)  # 'true' or 'false' as string
@@ -45,7 +45,7 @@ class TenantRole(Base):
     updated_at = Column(String, nullable=False, default=lambda: datetime.utcnow().isoformat(), onupdate=lambda: datetime.utcnow().isoformat())
     
     # Relationships
-    tenant = relationship("Organization", back_populates="tenant_roles")
+    tenant = relationship("Tenant", back_populates="tenant_roles")
     user_tenant_roles = relationship("UserTenantRole", back_populates="role", cascade="all, delete-orphan")
     role_permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
     
@@ -65,14 +65,14 @@ class UserTenantRole(Base):
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(String, ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True)
-    tenant_id = Column(String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     role_id = Column(String, ForeignKey("tenant_roles.id", ondelete="CASCADE"), nullable=False, index=True)
     assigned_at = Column(String, nullable=False, default=lambda: datetime.utcnow().isoformat())
     assigned_by = Column(String, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
     
     # Relationships
     user = relationship("Person", foreign_keys=[user_id], back_populates="tenant_memberships", primaryjoin="UserTenantRole.user_id == Person.id")
-    tenant = relationship("Organization", foreign_keys=[tenant_id], back_populates="users")
+    tenant = relationship("Tenant", foreign_keys=[tenant_id], back_populates="users")
     role = relationship("TenantRole", back_populates="user_tenant_roles")
     assigned_by_user = relationship("Person", foreign_keys=[assigned_by], viewonly=True, primaryjoin="UserTenantRole.assigned_by == Person.id")
     

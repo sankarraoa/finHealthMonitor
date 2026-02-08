@@ -95,12 +95,35 @@ WHERE id = '3afa9332-9a85-4cb6-b858-7bd8e7546bb8';
 -- ============================================================================
 -- 3. PERSONS table
 -- ============================================================================
--- Persons inherit from parties, so they already have the fields from parties
--- Just update the organization_id for existing persons
-UPDATE parties 
-SET organization_id = '3afa9332-9a85-4cb6-b858-7bd8e7546bb8'
-WHERE id IN (SELECT id FROM persons)
-AND organization_id IS NULL;
+-- Add organization_id and audit fields directly to persons table
+ALTER TABLE persons 
+ADD COLUMN IF NOT EXISTS organization_id VARCHAR(255),
+ADD COLUMN IF NOT EXISTS created_by VARCHAR(255),
+ADD COLUMN IF NOT EXISTS modified_by VARCHAR(255),
+ADD COLUMN IF NOT EXISTS created_at VARCHAR(255),
+ADD COLUMN IF NOT EXISTS modified_at VARCHAR(255);
+
+-- Add foreign key constraints
+ALTER TABLE persons
+ADD CONSTRAINT fk_persons_organization_id 
+FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE;
+
+ALTER TABLE persons
+ADD CONSTRAINT fk_persons_created_by 
+FOREIGN KEY (created_by) REFERENCES persons(id) ON DELETE SET NULL;
+
+ALTER TABLE persons
+ADD CONSTRAINT fk_persons_modified_by 
+FOREIGN KEY (modified_by) REFERENCES persons(id) ON DELETE SET NULL;
+
+-- Update existing records
+UPDATE persons 
+SET organization_id = '3afa9332-9a85-4cb6-b858-7bd8e7546bb8',
+    created_by = '3e3caba8-db08-4ea9-a48c-afc777b5a5c6',
+    modified_by = '3e3caba8-db08-4ea9-a48c-afc777b5a5c6',
+    created_at = COALESCE(created_at, (SELECT created_at FROM parties WHERE parties.id = persons.id)),
+    modified_at = COALESCE(modified_at, (SELECT updated_at FROM parties WHERE parties.id = persons.id))
+WHERE organization_id IS NULL OR created_by IS NULL OR modified_by IS NULL OR created_at IS NULL OR modified_at IS NULL;
 
 -- ============================================================================
 -- 4. CONNECTIONS table

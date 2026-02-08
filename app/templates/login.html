@@ -24,7 +24,7 @@
                     </div>
                     {% endif %}
                     
-                    <div class="login-form">
+                    <form id="loginForm" class="login-form" method="post" action="/api/auth/login">
                         <!-- Social Login Options -->
                         <div class="social-login-section">
                             <div class="social-login-buttons">
@@ -82,7 +82,7 @@
                                 name="password" 
                                 class="form-input" 
                                 placeholder="•••••"
-                                value="1234"
+                                value="password123"
                             >
                         </div>
                         
@@ -97,17 +97,64 @@
                             <label for="remember" class="remember-label">Remember Password</label>
                         </div>
                         
-                        <a href="/home" class="btn btn-signin">Sign In</a>
+                        <button type="submit" class="btn btn-signin">Sign In</button>
                         
                         <div class="create-account-link">
                             <span class="create-account-text">Don't have an account? </span>
                             <a href="#" class="create-account-link-text">Create Account</a>
                         </div>
-                    </div>
+                    </form>
                 </div>
             </div>
         </div>
     </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Login failed');
+                }
+                
+                const data = await response.json();
+                
+                // Redirect to home page on successful login
+                window.location.href = '/home';
+            } catch (error) {
+                // Show error message
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.innerHTML = '<strong>Error:</strong> ' + error.message;
+                
+                // Remove existing error messages
+                const existingError = document.querySelector('.error-message');
+                if (existingError) {
+                    existingError.remove();
+                }
+                
+                // Insert error message at the top of the form
+                const form = document.getElementById('loginForm');
+                form.insertBefore(errorDiv, form.firstChild);
+            }
+        });
+    </script>
 </body>
 </html>
 

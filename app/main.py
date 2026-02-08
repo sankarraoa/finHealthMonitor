@@ -11,6 +11,13 @@ import asyncio
 import re
 from datetime import datetime, timedelta
 import uuid
+import warnings
+
+# Suppress SQLAlchemy warnings about implicitly combining columns in joined-table inheritance
+# These warnings are expected when using joined-table inheritance with columns of the same name
+# in both parent and child tables. The functionality works correctly - we handle the columns
+# separately in the service layer using the mapper.
+warnings.filterwarnings("ignore", message=".*Implicitly combining column.*", category=Warning)
 
 from app.config import config
 from app.xero_client import XeroClient
@@ -21,7 +28,7 @@ from app.quickbooks_client import QuickBooksClient
 from app.payroll_risk_db import payroll_risk_db
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)  # Changed to DEBUG to see more details
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
@@ -49,6 +56,246 @@ def tojson_filter(obj):
 
 templates.env.filters["tojson"] = tojson_filter
 
+
+def get_user_context(request: Request) -> dict:
+    """Get current user context for templates."""
+    from app.auth.session import get_current_user_id, get_current_tenant_id
+    from app.database import SessionLocal
+    from app.models.party import Person
+    from app.models.rbac import UserTenantRole, TenantRole, RolePermission, Permission
+    
+    try:
+        user_id = get_current_user_id(request)
+        tenant_id = get_current_tenant_id(request)
+        
+        logger.debug(f"get_user_context: user_id={user_id}, tenant_id={tenant_id}")
+        logger.debug(f"get_user_context: session keys={list(request.session.keys()) if hasattr(request, 'session') else 'no session'}")
+        
+        if not user_id:
+            logger.debug("get_user_context: No user_id in session")
+            # Return empty context with empty resources list
+            return {
+                "user_resources": [], 
+                "has_resource_permission": lambda r: False,
+                "has_action_permission": lambda r, a: False,
+                "get_resource_actions": lambda r: [],
+                "get_resource_ui_flags": lambda r: {"show_add": False, "show_edit": False, "show_refresh": False, "show_add_tenant": False, "show_remove": False}
+            }
+        
+        db = SessionLocal()
+        try:
+            user = db.query(Person).filter(Person.id == user_id).first()
+            if not user:
+                logger.warning(f"get_user_context: User not found in database for user_id={user_id}")
+                # Return empty context with empty resources list
+                return {
+                    "user_resources": [], 
+                    "has_resource_permission": lambda r: False,
+                    "has_action_permission": lambda r, a: False,
+                    "get_resource_actions": lambda r: [],
+                    "get_resource_ui_flags": lambda r: {"show_add": False, "show_edit": False, "show_refresh": False, "show_add_tenant": False, "show_remove": False}
+                }
+            
+            logger.debug(f"get_user_context: Found user {user.email}, first_name={user.first_name}, last_name={user.last_name}")
+            
+            # Get user's role in the current tenant
+            role_name = None
+            role_id = None
+            user_permissions = set()  # Store user's permissions as resource:action strings
+            
+            if tenant_id:
+                membership = db.query(UserTenantRole).filter(
+                    UserTenantRole.user_id == user_id,
+                    UserTenantRole.tenant_id == tenant_id
+                ).first()
+                
+                if membership:
+                    role = db.query(TenantRole).filter(TenantRole.id == membership.role_id).first()
+                    if role:
+                        role_name = role.name
+                        role_id = role.id
+                        logger.debug(f"get_user_context: Found role {role_name} for user")
+                        
+                        # Get all permissions for this role
+                        role_permissions = db.query(RolePermission).filter(
+                            RolePermission.role_id == role_id
+                        ).all()
+                        
+                        permission_ids = [rp.permission_id for rp in role_permissions]
+                        permissions = db.query(Permission).filter(Permission.id.in_(permission_ids)).all()
+                        
+                        for perm in permissions:
+                            user_permissions.add(f"{perm.resource}:{perm.action}")
+                        
+                        logger.debug(f"get_user_context: User has {len(user_permissions)} permissions")
+                        logger.debug(f"get_user_context: User permissions: {sorted(user_permissions)}")
+            
+            # Generate initials from first_name and last_name
+            initials = ""
+            if user.first_name and user.last_name:
+                initials = f"{user.first_name[0]}{user.last_name[0]}".upper()
+            elif user.first_name:
+                initials = user.first_name[0].upper()
+            elif user.last_name:
+                initials = user.last_name[0].upper()
+            
+            logger.debug(f"get_user_context: Returning user context with initials={initials}, role={role_name}")
+            
+            # Build a set of resources the user has permissions for
+            user_resources_set = set()
+            for perm_key in user_permissions:
+                resource = perm_key.split(":")[0] if ":" in perm_key else perm_key
+                user_resources_set.add(resource)
+            
+            # Convert to list for Jinja2 template compatibility
+            user_resources = sorted(list(user_resources_set))
+            
+            logger.debug(f"get_user_context: User has permissions for resources: {user_resources}")
+            
+            # Create a helper function to check if user has any permission for a resource
+            def has_resource_permission(resource: str) -> bool:
+                """Check if user has any permission (view, create, edit, delete, or manage) for a resource."""
+                return resource in user_resources_set
+            
+            # Create a helper function to check if user has a specific action permission for a resource
+            def has_action_permission(resource: str, action: str) -> bool:
+                """Check if user has a specific action permission (view, create, edit, delete, or manage) for a resource."""
+                # Check for the specific permission
+                if f"{resource}:{action}" in user_permissions:
+                    return True
+                # If checking for any action and user has manage, return True
+                if action != "manage" and f"{resource}:manage" in user_permissions:
+                    return True
+                return False
+            
+            # Create a helper function to get all actions the user has for a resource
+            def get_resource_actions(resource: str) -> list:
+                """Get all actions the user has permission for a resource."""
+                actions = []
+                for perm_key in user_permissions:
+                    if perm_key.startswith(f"{resource}:"):
+                        action = perm_key.split(":")[1] if ":" in perm_key else ""
+                        if action:
+                            actions.append(action)
+                # If user has manage, they have all actions
+                if "manage" in actions:
+                    return ["view", "create", "edit", "delete", "manage"]
+                return actions
+            
+            # Create a helper function to get UI visibility flags for a resource based on permissions
+            def get_resource_ui_flags(resource: str) -> dict:
+                """
+                Get UI visibility flags for a resource based on user's permissions.
+                Returns a dict with boolean flags for each UI element.
+                
+                Logic:
+                - view only: Hide all action buttons/icons
+                - create: Show only Add button
+                - edit: Show refresh, add tenant, edit icons
+                - delete: Show remove icon
+                - manage: Show all
+                """
+                actions = get_resource_actions(resource)
+                
+                has_view = "view" in actions
+                has_create = "create" in actions
+                has_edit = "edit" in actions
+                has_delete = "delete" in actions
+                has_manage = "manage" in actions
+                
+                # If user has manage, they can do everything
+                if has_manage:
+                    return {
+                        "show_add": True,
+                        "show_edit": True,
+                        "show_refresh": True,
+                        "show_add_tenant": True,
+                        "show_remove": True
+                    }
+                
+                # Determine what to show based on available permissions
+                show_add = has_create
+                show_edit = has_edit
+                show_refresh = has_edit
+                show_add_tenant = has_edit
+                show_remove = has_delete
+                
+                return {
+                    "show_add": show_add,
+                    "show_edit": show_edit,
+                    "show_refresh": show_refresh,
+                    "show_add_tenant": show_add_tenant,
+                    "show_remove": show_remove
+                }
+            
+            return {
+                "current_user": {
+                    "id": user.id,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "full_name": user.full_name,
+                    "email": user.email,
+                    "image_url": user.image_url,
+                    "initials": initials,
+                    "role": role_name or "User"
+                },
+                "has_resource_permission": has_resource_permission,
+                "has_action_permission": has_action_permission,
+                "get_resource_actions": get_resource_actions,
+                "get_resource_ui_flags": get_resource_ui_flags,
+                "user_resources": user_resources  # Pass as list for template use
+            }
+        except Exception as e:
+            logger.error(f"Error getting user context (database query): {e}", exc_info=True)
+            # Return empty context with empty resources list
+            return {
+                "user_resources": [], 
+                "has_resource_permission": lambda r: False,
+                "has_action_permission": lambda r, a: False,
+                "get_resource_actions": lambda r: [],
+                "get_resource_ui_flags": lambda r: {"show_add": False, "show_edit": False, "show_refresh": False, "show_add_tenant": False, "show_remove": False}
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error getting user context (session access): {e}", exc_info=True)
+        # Return empty context with empty resources list
+        return {
+            "user_resources": [], 
+            "has_resource_permission": lambda r: False,
+            "has_action_permission": lambda r, a: False,
+            "get_resource_actions": lambda r: [],
+            "get_resource_ui_flags": lambda r: {"show_add": False, "show_edit": False, "show_refresh": False, "show_add_tenant": False, "show_remove": False}
+        }
+
+
+# Store the original TemplateResponse
+_original_template_response = templates.TemplateResponse
+
+# Create a wrapper function that adds user context
+def template_response_with_user(name: str, context: dict):
+    """Wrapper for TemplateResponse that automatically adds user context."""
+    request = context.get("request")
+    if request:
+        try:
+            # Ensure session is accessible
+            if hasattr(request, 'session'):
+                user_context = get_user_context(request)
+                if user_context:
+                    context.update(user_context)
+                    logger.debug(f"template_response_with_user: Added user context for template {name}")
+                    logger.debug(f"template_response_with_user: user_resources = {user_context.get('user_resources', 'NOT FOUND')}")
+                else:
+                    logger.debug(f"template_response_with_user: No user context found for template {name}")
+            else:
+                logger.warning(f"template_response_with_user: Request has no session attribute")
+        except Exception as e:
+            logger.error(f"template_response_with_user: Error adding user context: {e}", exc_info=True)
+    return _original_template_response(name, context)
+
+# Replace templates.TemplateResponse with our wrapper
+templates.TemplateResponse = template_response_with_user
+
 # Initialize Xero client
 xero_client = XeroClient()
 
@@ -60,13 +307,16 @@ from app.routes import rbac
 app.include_router(rbac.router)
 
 
-def get_connections_for_selector() -> Dict[str, Any]:
+def get_connections_for_selector(tenant_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Get all active connections grouped by category for the connection selector widget.
     Groups Xero connections by refresh_token (one per OAuth authorization).
     Returns connections and categories info.
+    
+    Args:
+        tenant_id: Optional tenant ID to filter connections. If provided, only returns connections for this tenant.
     """
-    all_connections = connection_manager.get_all_connections()
+    all_connections = connection_manager.get_all_connections(tenant_id=tenant_id)
     
     # Filter active connections (with access_token)
     active_connections = []
@@ -438,9 +688,26 @@ def clear_xero_session(request: Request):
     request.session.pop("token_created_at", None)
 
 
+@app.get("/debug/session")
+async def debug_session(request: Request):
+    """Debug endpoint to check session data."""
+    return JSONResponse({
+        "session_keys": list(request.session.keys()) if hasattr(request, 'session') else [],
+        "session_data": dict(request.session) if hasattr(request, 'session') else {},
+        "user_id": request.session.get("user_id") if hasattr(request, 'session') else None,
+        "tenant_id": request.session.get("tenant_id") if hasattr(request, 'session') else None,
+        "user_email": request.session.get("user_email") if hasattr(request, 'session') else None,
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Root endpoint - redirects to home page."""
+    """Root endpoint - redirects to login-page if not authenticated, otherwise to home."""
+    from app.auth.session import get_current_user_id
+    
+    user_id = get_current_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login-page")
     return RedirectResponse(url="/home")
 
 
@@ -472,16 +739,22 @@ async def login_page(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login(request: Request):
-    """Initiate Xero OAuth login flow."""
-    # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    request.session["oauth_state"] = state
+    """Display login page."""
+    from app.auth.session import get_current_user_id
     
-    # Get authorization URL
-    auth_url = xero_client.get_authorization_url(state=state)
+    # If already logged in, redirect to home
+    user_id = get_current_user_id(request)
+    if user_id:
+        return RedirectResponse(url="/home")
     
-    logger.info("Redirecting to Xero authorization")
-    return RedirectResponse(url=auth_url)
+    error = request.query_params.get("error")
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "error": error
+        }
+    )
 
 
 @app.get("/callback")
@@ -1522,6 +1795,17 @@ async def settings(request: Request):
                         break
             
             if not tenant_exists:
+                # Get tenant_id and created_by from session
+                from app.auth.session import get_current_tenant_id, get_current_user_id
+                tenant_id = None
+                created_by = None
+                try:
+                    tenant_id = get_current_tenant_id(request)
+                    created_by = get_current_user_id(request)
+                except Exception as e:
+                    logger.warning(f"Could not get session values: {e}")
+                    pass
+                
                 # Migrate session connection to connection manager
                 logger.info(f"Migrating session-based Xero connection: {session_tenant_name}")
                 connection_manager.add_connection(
@@ -1533,7 +1817,9 @@ async def settings(request: Request):
                     tenant_id=session_tenant_id,
                     tenant_name=session_tenant_name,
                     expires_in=request.session.get("expires_in", 1800),
-                    metadata={"migrated_from_session": True}
+                    metadata={"migrated_from_session": True},
+                    tenant_id_param=tenant_id,
+                    created_by=created_by
                 )
             else:
                 # Tenant already exists - clear session to prevent re-migration
@@ -1716,6 +2002,17 @@ async def add_connection(request: Request):
     if not all([category, software, name]):
         return RedirectResponse(url="/settings?error=Missing required fields")
     
+    # Get tenant_id and created_by from session
+    from app.auth.session import get_current_tenant_id, get_current_user_id
+    tenant_id = None
+    created_by = None
+    try:
+        tenant_id = get_current_tenant_id(request)
+        created_by = get_current_user_id(request)
+    except Exception as e:
+        print(f"Warning: Could not get session values: {e}")
+        pass
+    
     # Create connection without tokens (will be added after OAuth)
     connection_id = connection_manager.add_connection(
         category=category,
@@ -1724,7 +2021,9 @@ async def add_connection(request: Request):
         access_token="",  # Will be set after OAuth
         refresh_token=None,
         tenant_id=None,
-        tenant_name=None
+        tenant_name=None,
+        tenant_id_param=tenant_id,
+        created_by=created_by
     )
     
     # Store connection ID in session for OAuth callback
@@ -2678,6 +2977,17 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                             logger.info(f"  {idx + 1}. {t.get('tenant_name')} (ID: {t.get('tenant_id', 'N/A')[:8]}..., Connection ID: {t.get('xero_connection_id', 'N/A')})")
                         
                         try:
+                            # Get tenant_id and created_by from session
+                            from app.auth.session import get_current_tenant_id, get_current_user_id
+                            tenant_id = None
+                            created_by = None
+                            try:
+                                tenant_id = get_current_tenant_id(request)
+                                created_by = get_current_user_id(request)
+                            except Exception as e:
+                                logger.warning(f"Could not get session values: {e}")
+                                pass
+                            
                             logger.info("Calling connection_manager.add_connection()...")
                             new_connection_id = connection_manager.add_connection(
                                 category=category,
@@ -2686,7 +2996,9 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                                 access_token=access_token,
                                 refresh_token=refresh_token,
                                 expires_in=expires_in,
-                                tenants=tenants_list
+                                tenants=tenants_list,
+                                tenant_id_param=tenant_id,
+                                created_by=created_by
                             )
                             logger.info(f"=== CONNECTION CREATED SUCCESSFULLY ===")
                             logger.info(f"New connection ID: {new_connection_id}")
@@ -2821,6 +3133,17 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                 logger.info(f"Category: {category}")
                 logger.info(f"Realm ID: {realm_id}")
                 
+                # Get tenant_id and created_by from session
+                from app.auth.session import get_current_tenant_id, get_current_user_id
+                tenant_id = None
+                created_by = None
+                try:
+                    tenant_id = get_current_tenant_id(request)
+                    created_by = get_current_user_id(request)
+                except Exception as e:
+                    logger.warning(f"Could not get session values: {e}")
+                    pass
+                
                 # QuickBooks doesn't use tenants like Xero, so we use an empty tenants array
                 # and store realm_id in metadata
                 new_connection_id = connection_manager.add_connection(
@@ -2831,7 +3154,9 @@ async def callback_software(request: Request, software: str, code: Optional[str]
                     refresh_token=refresh_token,
                     expires_in=expires_in,
                     metadata={"realm_id": realm_id},
-                    tenants=[]  # QuickBooks doesn't have multiple tenants
+                    tenants=[],  # QuickBooks doesn't have multiple tenants
+                    tenant_id_param=tenant_id,
+                    created_by=created_by
                 )
                 
                 logger.info(f"=== CONNECTION CREATED SUCCESSFULLY ===")
@@ -2907,12 +3232,25 @@ async def reconnect_xero(request: Request):
     xero_conn = next((c for c in connections if c.get("software") == "xero"), None)
     
     if not xero_conn:
+        # Get tenant_id and created_by from session
+        from app.auth.session import get_current_tenant_id, get_current_user_id
+        tenant_id = None
+        created_by = None
+        try:
+            tenant_id = get_current_tenant_id(request)
+            created_by = get_current_user_id(request)
+        except Exception as e:
+            logger.warning(f"Could not get session values: {e}")
+            pass
+        
         # Create a default Xero connection
         connection_id = connection_manager.add_connection(
             category="finance",
             software="xero",
             name="Xero Connection",
-            access_token=""
+            access_token="",
+            tenant_id_param=tenant_id,
+            created_by=created_by
         )
     else:
         connection_id = xero_conn["id"]
@@ -3081,12 +3419,17 @@ async def start_payroll_risk_analysis(request: Request):
         analysis_id = str(uuid.uuid4())
         connection_name = connection.get("name", "Unknown Connection")
         
+        # Get B2B SaaS tenant_id from session
+        from app.auth.session import get_current_tenant_id
+        b2b_tenant_id = get_current_tenant_id(request)
+        
         payroll_risk_db.create_analysis(
             analysis_id=analysis_id,
             connection_id=connection_id,
             connection_name=connection_name,
-            tenant_id=tenant_id,
-            tenant_name=tenant_name
+            tenant_id=b2b_tenant_id,  # B2B SaaS tenant
+            xero_tenant_id=tenant_id,  # Xero tenant ID from form
+            xero_tenant_name=tenant_name  # Xero tenant name
         )
         
         # Start background task
@@ -3202,9 +3545,22 @@ async def get_connection_tenants(request: Request, connection_id: str):
 @app.get("/logout")
 async def logout(request: Request):
     """Clear session and logout."""
-    clear_xero_session(request)
+    from app.auth.session import logout_user
+    
+    # Clear Xero session if exists
+    try:
+        clear_xero_session(request)
+    except:
+        pass  # Ignore if function doesn't exist or fails
+    
+    # Clear user session using the session utility
+    logout_user(request)
+    
+    # Clear any remaining session data
     request.session.clear()
-    return RedirectResponse(url="/settings")
+    
+    # Redirect to login page
+    return RedirectResponse(url="/login-page")
 
 
 @app.get("/pe", response_class=HTMLResponse)

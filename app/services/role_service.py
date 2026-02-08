@@ -2,7 +2,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict
 from app.models.rbac import TenantRole, RolePermission, Permission
-from app.models.party import Organization
+from app.models.party import Tenant
 import uuid
 from datetime import datetime
 
@@ -12,7 +12,8 @@ def create_role(
     tenant_id: str,
     name: str,
     description: Optional[str] = None,
-    is_system_role: bool = False
+    is_system_role: bool = False,
+    created_by: Optional[str] = None
 ) -> TenantRole:
     """Create a new role in a tenant."""
     now = datetime.utcnow().isoformat()
@@ -24,7 +25,9 @@ def create_role(
         description=description,
         is_system_role='true' if is_system_role else 'false',
         created_at=now,
-        updated_at=now
+        updated_at=now,
+        created_by=created_by,
+        modified_by=created_by  # Set modified_by to created_by on creation
     )
     
     db.add(role)
@@ -57,7 +60,8 @@ def update_role(
     db: Session,
     role_id: str,
     name: Optional[str] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    modified_by: Optional[str] = None
 ) -> Optional[TenantRole]:
     """Update role information."""
     role = get_role_by_id(db, role_id)
@@ -70,6 +74,8 @@ def update_role(
         role.description = description
     
     role.updated_at = datetime.utcnow().isoformat()
+    if modified_by:
+        role.modified_by = modified_by
     db.commit()
     db.refresh(role)
     return role
@@ -138,7 +144,8 @@ def get_role_permissions(db: Session, role_id: str) -> List[Permission]:
 def create_default_roles_for_tenant(
     db: Session,
     tenant_id: str,
-    permission_service=None  # Optional, for compatibility
+    permission_service=None,  # Optional, for compatibility
+    created_by: Optional[str] = None
 ) -> Dict[str, TenantRole]:
     """Create default roles for a new tenant with default permissions."""
     from app.services.permission_service import get_or_create_permission
@@ -146,23 +153,23 @@ def create_default_roles_for_tenant(
     roles = {}
     
     # Administrator role - all permissions
-    admin_role = create_role(db, tenant_id, "Administrator", "Full access to all resources", is_system_role=True)
+    admin_role = create_role(db, tenant_id, "Administrator", "Full access to all resources", is_system_role=True, created_by=created_by)
     roles["Administrator"] = admin_role
     
     # IT Administrator - connections only
-    it_admin_role = create_role(db, tenant_id, "IT Administrator", "Manage connections only", is_system_role=True)
+    it_admin_role = create_role(db, tenant_id, "IT Administrator", "Manage connections only", is_system_role=True, created_by=created_by)
     roles["IT Administrator"] = it_admin_role
     
     # Accountant - accounts, invoices, journals, bank transactions
-    accountant_role = create_role(db, tenant_id, "Accountant", "Access to accounting resources", is_system_role=True)
+    accountant_role = create_role(db, tenant_id, "Accountant", "Access to accounting resources", is_system_role=True, created_by=created_by)
     roles["Accountant"] = accountant_role
     
     # Controller - payroll risk and cash strain
-    controller_role = create_role(db, tenant_id, "Controller", "Access to payroll risk and cash strain", is_system_role=True)
+    controller_role = create_role(db, tenant_id, "Controller", "Access to payroll risk and cash strain", is_system_role=True, created_by=created_by)
     roles["Controller"] = controller_role
     
     # Finance Executive - view only on all resources
-    executive_role = create_role(db, tenant_id, "Finance Executive", "View-only access to all resources", is_system_role=True)
+    executive_role = create_role(db, tenant_id, "Finance Executive", "View-only access to all resources", is_system_role=True, created_by=created_by)
     roles["Finance Executive"] = executive_role
     
     # Assign permissions to roles
@@ -178,7 +185,7 @@ def create_default_roles_for_tenant(
     permissions = {}
     for resource in resources:
         for action in actions:
-            perm = get_or_create_permission(db, resource, action)
+            perm = get_or_create_permission(db, resource, action, tenant_id=tenant_id, created_by=created_by)
             permissions[f"{resource}:{action}"] = perm
     
     # Administrator: all permissions (manage on all)

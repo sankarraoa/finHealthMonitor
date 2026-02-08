@@ -1,16 +1,17 @@
 """Database models."""
 from app.models.payroll_risk import PayrollRiskAnalysis
-from app.models.connection import Connection, Tenant
+from app.models.connection import Connection, XeroTenant
 from app.models.mcp_cache import MCPDataCache
-from app.models.party import Party, Organization, Person
+from app.models.party import Party, Tenant, Organization, Person
 from app.models.rbac import Permission, TenantRole, UserTenantRole, RolePermission
 
 __all__ = [
     "PayrollRiskAnalysis", 
     "Connection", 
-    "Tenant", 
+    "XeroTenant",
     "MCPDataCache",
     "Party",
+    "Tenant",
     "Organization",
     "Person",
     "Permission",

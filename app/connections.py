@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal
-from app.models.connection import Connection, Tenant
+from app.models.connection import Connection, XeroTenant
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class ConnectionManager:
     def _connection_to_dict(self, conn: Connection) -> Dict[str, Any]:
         """Convert Connection model to dict format (for backward compatibility)."""
         tenants_list = []
-        for tenant in conn.tenants:
+        for tenant in conn.xero_tenants:
             tenants_list.append({
                 "tenant_id": tenant.tenant_id,
                 "tenant_name": tenant.tenant_name,
@@ -73,15 +73,25 @@ class ConnectionManager:
             "tenants": tenants_list
         }
     
-    def get_all_connections(self) -> List[Dict[str, Any]]:
-        """Get all connections with tenants loaded in one query (fixes N+1 problem)."""
+    def get_all_connections(self, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get all connections with xero_tenants loaded in one query (fixes N+1 problem).
+        
+        Args:
+            tenant_id: Optional tenant ID to filter connections. If provided, only returns connections for this tenant.
+        """
         db = self._get_db()
         try:
-            # Eager load tenants to avoid N+1 queries
+            # Eager load xero_tenants to avoid N+1 queries
             from sqlalchemy.orm import joinedload
-            connections = db.query(Connection).options(
-                joinedload(Connection.tenants)
-            ).all()
+            query = db.query(Connection).options(
+                joinedload(Connection.xero_tenants)
+            )
+            
+            # Filter by tenant_id if provided
+            if tenant_id:
+                query = query.filter(Connection.tenant_id == tenant_id)
+            
+            connections = query.all()
             return [self._connection_to_dict(conn) for conn in connections]
         except SQLAlchemyError as e:
             logger.error(f"Error getting all connections: {str(e)}")
@@ -89,8 +99,13 @@ class ConnectionManager:
         finally:
             db.close()
     
-    def get_connection(self, connection_id: str) -> Optional[Dict[str, Any]]:
-        """Get a specific connection by ID with tenants loaded (fixes N+1 problem) and in-memory caching."""
+    def get_connection(self, connection_id: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get a specific connection by ID with xero_tenants loaded (fixes N+1 problem) and in-memory caching.
+        
+        Args:
+            connection_id: Connection ID to fetch
+            tenant_id: Optional tenant ID to verify connection belongs to this tenant
+        """
         from app.cache_manager import TwoTierCache
         
         def _fetch_from_db(conn_id: str):
@@ -99,9 +114,15 @@ class ConnectionManager:
             try:
                 # Eager load tenants to avoid N+1 queries
                 from sqlalchemy.orm import joinedload
-                conn = db.query(Connection).options(
-                    joinedload(Connection.tenants)
-                ).filter(Connection.id == conn_id).first()
+                query = db.query(Connection).options(
+                    joinedload(Connection.xero_tenants)
+                ).filter(Connection.id == conn_id)
+                
+                # Filter by tenant_id if provided
+                if tenant_id:
+                    query = query.filter(Connection.tenant_id == tenant_id)
+                
+                conn = query.first()
                 if conn:
                     return self._connection_to_dict(conn)
                 return None
@@ -126,7 +147,9 @@ class ConnectionManager:
         expires_in: int = 1800,
         metadata: Optional[Dict[str, Any]] = None,
         xero_connection_id: Optional[str] = None,
-        tenants: Optional[List[Dict[str, Any]]] = None
+        tenants: Optional[List[Dict[str, Any]]] = None,
+        tenant_id_param: Optional[str] = None,
+        created_by: Optional[str] = None
     ) -> str:
         """
         Add a new connection.
@@ -144,6 +167,7 @@ class ConnectionManager:
             # Create connection
             conn = Connection(
                 id=connection_id,
+                tenant_id=tenant_id_param,
                 category=category,
                 software=software,
                 name=name,
@@ -171,7 +195,7 @@ class ConnectionManager:
             
             # Create tenant records
             for tenant_data in tenants_list:
-                tenant = Tenant(
+                tenant = XeroTenant(
                     id=str(uuid.uuid4()),
                     connection_id=connection_id,
                     tenant_id=tenant_data.get("tenant_id"),
@@ -242,13 +266,17 @@ class ConnectionManager:
                 # Add new tenants
                 now = datetime.now().isoformat()
                 for tenant_data in tenants:
-                    tenant = Tenant(
+                    tenant = XeroTenant(
                         id=str(uuid.uuid4()),
                         connection_id=connection_id,
                         tenant_id=tenant_data.get("tenant_id"),
                         tenant_name=tenant_data.get("tenant_name", ""),
                         xero_connection_id=tenant_data.get("xero_connection_id"),
-                        created_at=now
+                        organization_id=organization_id,
+                        created_at=now,
+                        modified_at=now,
+                        created_by=modified_by,  # Use modified_by for new tenants created during update
+                        modified_by=modified_by
                     )
                     db.add(tenant)
             elif tenant_id is not None:
@@ -400,7 +428,7 @@ class ConnectionManager:
         try:
             from sqlalchemy.orm import joinedload
             query = db.query(Connection).options(
-                joinedload(Connection.tenants)
+                joinedload(Connection.xero_tenants)
             ).filter(Connection.refresh_token == refresh_token)
             if software:
                 query = query.filter(Connection.software == software)
@@ -474,7 +502,7 @@ class ConnectionManager:
         try:
             from sqlalchemy.orm import joinedload
             connections = db.query(Connection).options(
-                joinedload(Connection.tenants)
+                joinedload(Connection.xero_tenants)
             ).filter(Connection.software == "xero").all()
             return [self._connection_to_dict(conn) for conn in connections]
         except SQLAlchemyError as e:
@@ -499,8 +527,8 @@ class ConnectionManager:
         try:
             from sqlalchemy.orm import joinedload
             query = db.query(Connection).options(
-                joinedload(Connection.tenants)
-            ).join(Tenant).filter(Tenant.tenant_id.in_(tenant_ids))
+                joinedload(Connection.xero_tenants)
+            ).join(XeroTenant).filter(XeroTenant.tenant_id.in_(tenant_ids))
             if software:
                 query = query.filter(Connection.software == software)
             
@@ -646,7 +674,7 @@ class ConnectionManager:
             from sqlalchemy.orm import joinedload
             # Get all Xero connections with tenants loaded
             xero_connections = db.query(Connection).options(
-                joinedload(Connection.tenants)
+                joinedload(Connection.xero_tenants)
             ).filter(Connection.software == "xero").all()
             
             # Group by refresh_token
@@ -671,7 +699,7 @@ class ConnectionManager:
                 # Collect all unique tenants from all connections in this group
                 all_tenants = {}
                 for conn in connections_list:
-                    for tenant in conn.tenants:
+                    for tenant in conn.xero_tenants:
                         tenant_id = tenant.tenant_id
                         if tenant_id:
                             # Use the most recent tenant info
@@ -686,7 +714,7 @@ class ConnectionManager:
                 # Add merged tenants
                 now = datetime.now().isoformat()
                 for tenant in all_tenants.values():
-                    new_tenant = Tenant(
+                    new_tenant = XeroTenant(
                         id=str(uuid.uuid4()),
                         connection_id=keep_conn.id,
                         tenant_id=tenant.tenant_id,
@@ -753,13 +781,13 @@ class ConnectionManager:
         try:
             from sqlalchemy.orm import joinedload
             conn = db.query(Connection).options(
-                joinedload(Connection.tenants)
+                joinedload(Connection.xero_tenants)
             ).filter(Connection.id == connection_id).first()
             if not conn:
                 return []
             
             tenants = []
-            for tenant in conn.tenants:
+            for tenant in conn.xero_tenants:
                 tenants.append({
                     "tenant_id": tenant.tenant_id,
                     "tenant_name": tenant.tenant_name,
