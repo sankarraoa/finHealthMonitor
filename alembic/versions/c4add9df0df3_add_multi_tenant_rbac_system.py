@@ -1,8 +1,8 @@
 """Add multi-tenant RBAC system
 
-Revision ID: XXXX_add_multi_tenant_rbac
+Revision ID: c4add9df0df3
 Revises: e83d4d45b357
-Create Date: 2026-01-XX XX:XX:XX.XXXXXX
+Create Date: 2026-02-08 20:15:46.000000
 
 """
 from typing import Sequence, Union
@@ -15,7 +15,7 @@ from datetime import datetime
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'XXXX_add_multi_tenant_rbac'
+revision: str = 'c4add9df0df3'
 down_revision: Union[str, Sequence[str], None] = 'e83d4d45b357'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

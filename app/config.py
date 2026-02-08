@@ -35,6 +35,14 @@ class Config:
     # Application settings
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
+    # JWT configuration (for microservices)
+    JWT_SECRET: str = os.getenv("JWT_SECRET", os.getenv("SECRET_KEY", os.urandom(32).hex()))
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_HOURS: int = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
+    
+    # User Service URL (for microservices)
+    USER_SERVICE_URL: str = os.getenv("USER_SERVICE_URL", "http://localhost:8001")
+    
     # LLM Provider configuration
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai").lower()  # "openai" or "toqan"
     

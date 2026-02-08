@@ -19,7 +19,7 @@ This guide will help you set up a local PostgreSQL database to improve developme
 First, let's determine what PostgreSQL version Railway is using:
 
 ```bash
-python3 test_db_connection.py
+python3 scripts/database/test_db_connection.py
 ```
 
 Look for the "Major Version" in the output. Railway typically uses PostgreSQL 15.
@@ -31,7 +31,7 @@ Look for the "Major Version" in the output. Railway typically uses PostgreSQL 15
 Run the setup script:
 
 ```bash
-./setup_local_postgres.sh
+./scripts/database/setup_local_postgres.sh
 ```
 
 This script will:
@@ -237,7 +237,7 @@ If you installed a different PostgreSQL version than Railway:
 
 1. **Check Railway version:**
    ```bash
-   python3 test_db_connection.py
+   python3 scripts/database/test_db_connection.py
    ```
 
 2. **Uninstall current version:**

@@ -31,8 +31,7 @@ class PayrollRiskDB:
         connection_name: str,
         tenant_id: Optional[str] = None,
         xero_tenant_id: Optional[str] = None,
-        xero_tenant_name: Optional[str] = None,
-        created_by: Optional[str] = None
+        xero_tenant_name: Optional[str] = None
     ) -> bool:
         """Create a new payroll risk analysis record."""
         db = self._get_db()
@@ -47,12 +46,8 @@ class PayrollRiskDB:
                 xero_tenant_name=xero_tenant_name,
                 status="running",
                 initiated_at=now,
-                created_at=now,
-                modified_at=now,
                 progress=0,
-                progress_message="Initializing...",
-                created_by=created_by,
-                modified_by=created_by  # Set modified_by to created_by on creation
+                progress_message="Initializing..."
             )
             db.add(analysis)
             db.commit()
@@ -70,8 +65,7 @@ class PayrollRiskDB:
         analysis_id: str,
         progress: int,
         progress_message: str,
-        tenant_id: Optional[str] = None,
-        modified_by: Optional[str] = None
+        tenant_id: Optional[str] = None
     ) -> bool:
         """Update progress for an analysis."""
         db = self._get_db()
@@ -86,9 +80,6 @@ class PayrollRiskDB:
             
             analysis.progress = progress
             analysis.progress_message = progress_message
-            if modified_by:
-                analysis.modified_by = modified_by
-                analysis.modified_at = datetime.now().isoformat()
             db.commit()
             return True
         except SQLAlchemyError as e:
@@ -102,15 +93,14 @@ class PayrollRiskDB:
         self,
         analysis_id: str,
         result_data: Dict[str, Any],
-        organization_id: Optional[str] = None,
-        modified_by: Optional[str] = None
+        tenant_id: Optional[str] = None
     ) -> bool:
         """Mark analysis as complete and store results."""
         db = self._get_db()
         try:
             query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
-            if organization_id:
-                query = query.filter(PayrollRiskAnalysis.organization_id == organization_id)
+            if tenant_id:
+                query = query.filter(PayrollRiskAnalysis.tenant_id == tenant_id)
             analysis = query.first()
             if not analysis:
                 logger.warning(f"Analysis not found: {analysis_id}")
@@ -121,9 +111,6 @@ class PayrollRiskDB:
             analysis.result_data = json.dumps(result_data)
             analysis.progress = 100
             analysis.progress_message = "Analysis complete"
-            if modified_by:
-                analysis.modified_by = modified_by
-                analysis.modified_at = datetime.now().isoformat()
             db.commit()
             logger.info(f"Completed payroll risk analysis: {analysis_id}")
             return True
@@ -138,15 +125,14 @@ class PayrollRiskDB:
         self,
         analysis_id: str,
         error_message: str,
-        organization_id: Optional[str] = None,
-        modified_by: Optional[str] = None
+        tenant_id: Optional[str] = None
     ) -> bool:
         """Mark analysis as failed."""
         db = self._get_db()
         try:
             query = db.query(PayrollRiskAnalysis).filter(PayrollRiskAnalysis.id == analysis_id)
-            if organization_id:
-                query = query.filter(PayrollRiskAnalysis.organization_id == organization_id)
+            if tenant_id:
+                query = query.filter(PayrollRiskAnalysis.tenant_id == tenant_id)
             analysis = query.first()
             if not analysis:
                 logger.warning(f"Analysis not found: {analysis_id}")
@@ -156,9 +142,6 @@ class PayrollRiskDB:
             analysis.completed_at = datetime.now().isoformat()
             analysis.error_message = error_message
             analysis.progress_message = f"Error: {error_message}"
-            if modified_by:
-                analysis.modified_by = modified_by
-                analysis.modified_at = datetime.now().isoformat()
             db.commit()
             logger.info(f"Failed payroll risk analysis: {analysis_id}")
             return True

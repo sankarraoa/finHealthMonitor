@@ -97,7 +97,7 @@ Get from: https://developer.xero.com/myapps
 ### Database Connection Fails
 - Verify `DATABASE_URL` is correct
 - Check PostgreSQL service is running
-- Test: `railway run python test_db_connection.py`
+- Test: `railway run python scripts/database/test_db_connection.py`
 
 ### OAuth Redirect Mismatch
 - `XERO_REDIRECT_URI` must match exactly

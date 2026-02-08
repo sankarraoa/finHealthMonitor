@@ -4,8 +4,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr
+import logging
 
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 from app.auth.dependencies import get_current_user, get_current_tenant, require_tenant_membership
 from app.models.party import Person, Tenant
 from app.models.rbac import UserTenantRole, TenantRole
@@ -167,55 +170,96 @@ async def login_user(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """Login user with email and password."""
+    """Login user with email and password. Supports both microservice and monolith modes."""
     from app.auth.session import create_user_session
+    from app.config import config
     
-    user = user_service.authenticate_user(db, credentials.email, credentials.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+    # Check if we should use user-service (microservice mode)
+    use_user_service = bool(config.USER_SERVICE_URL and config.USER_SERVICE_URL != "http://localhost:8001")
+    
+    if use_user_service:
+        # Call user-service microservice
+        try:
+            from app.clients.user_service_client import UserServiceClient
+            client = UserServiceClient()
+            login_response = await client.login(credentials.email, credentials.password)
+            
+            # Extract JWT token and user data
+            access_token = login_response.get("access_token")
+            user_data = login_response.get("user", {})
+            tenants_data = login_response.get("tenants", [])
+            default_tenant_data = login_response.get("default_tenant")
+            
+            # Store JWT token in session (for backward compatibility with session-based auth)
+            if access_token:
+                request.session["jwt_token"] = access_token
+            
+            # Also create session with user data (for backward compatibility)
+            from app.models.party import Person, Tenant
+            user = db.query(Person).filter(Person.id == user_data.get("id")).first()
+            default_tenant = None
+            if default_tenant_data:
+                default_tenant = db.query(Tenant).filter(Tenant.id == default_tenant_data.get("id")).first()
+            
+            if user and default_tenant:
+                create_user_session(request, user, default_tenant)
+            
+            request.session.setdefault("_session_modified", True)
+            
+            return JSONResponse(content=login_response)
+        except Exception as e:
+            logger.error(f"Error calling user-service: {e}")
+            # Fallback to local authentication
+            logger.info("Falling back to local authentication")
+            use_user_service = False
+    
+    # Fallback to local authentication (monolith mode)
+    if not use_user_service:
+        user = user_service.authenticate_user(db, credentials.email, credentials.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Get user's tenants
+        tenants = user_service.get_user_tenants(db, user.id)
+        
+        # Set default tenant (first one, or getGo if available)
+        default_tenant = None
+        if tenants:
+            # Prefer getGo if available
+            getgo_tenant = next((t for t in tenants if t.company_name.lower() == "getgo"), None)
+            default_tenant = getgo_tenant if getgo_tenant else tenants[0]
+        
+        # Create session with user and tenant
+        create_user_session(request, user, default_tenant)
+        
+        # Explicitly save session to ensure cookie is set
+        request.session.setdefault("_session_modified", True)
+        
+        return JSONResponse(
+            content={
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "full_name": user.full_name
+                },
+                "tenants": [
+                    {
+                        "id": t.id,
+                        "company_name": t.company_name
+                    }
+                    for t in tenants
+                ],
+                "default_tenant": {
+                    "id": default_tenant.id,
+                    "company_name": default_tenant.company_name
+                } if default_tenant else None
+            }
         )
-    
-    # Get user's tenants
-    tenants = user_service.get_user_tenants(db, user.id)
-    
-    # Set default tenant (first one, or getGo if available)
-    default_tenant = None
-    if tenants:
-        # Prefer getGo if available
-        getgo_tenant = next((t for t in tenants if t.company_name.lower() == "getgo"), None)
-        default_tenant = getgo_tenant if getgo_tenant else tenants[0]
-    
-    # Create session with user and tenant
-    create_user_session(request, user, default_tenant)
-    
-    # Explicitly save session to ensure cookie is set
-    # The session middleware should handle this, but we'll ensure it's saved
-    request.session.setdefault("_session_modified", True)
-    
-    return JSONResponse(
-        content={
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "full_name": user.full_name
-            },
-            "tenants": [
-                {
-                    "id": t.id,
-                    "company_name": t.company_name
-                }
-                for t in tenants
-            ],
-            "default_tenant": {
-                "id": default_tenant.id,
-                "company_name": default_tenant.company_name
-            } if default_tenant else None
-        }
-    )
 
 
 # Tenant routes

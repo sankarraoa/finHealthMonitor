@@ -2,19 +2,27 @@
 
 The migration script `rename_tenant_id_to_organization_id.sql` needs to be executed against your PostgreSQL database.
 
-## Option 1: Using Python Script (Recommended)
+## Option 1: Using Alembic (Recommended)
+
+**Note:** The `run_migration.py` script has been removed. All database migrations should now be handled through Alembic.
 
 1. **Activate your virtual environment:**
    ```bash
    source venv/bin/activate
    ```
 
-2. **Run the migration script:**
+2. **Run Alembic migrations:**
    ```bash
-   python3 run_migration.py
+   alembic upgrade head
    ```
 
-This script will automatically use the same database connection as your application (local or Railway based on your `.env` settings).
+This will automatically apply all pending migrations to your database (local or Railway based on your `.env` settings).
+
+For creating new migrations:
+```bash
+alembic revision --autogenerate -m "description of changes"
+alembic upgrade head
+```
 
 ## Option 2: Using psql Command Line
 

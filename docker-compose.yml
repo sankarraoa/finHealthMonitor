@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  # Note: Using local PostgreSQL instead of Docker container
+  # If you want to use Docker PostgreSQL, uncomment the postgres service above
+  # and change DATABASE_URL to: postgresql://postgres:localdev@postgres:5432/finhealthmonitor
+
+  user-service:
+    build: ./services/user-service
+    ports:
+      - "8001:8001"
+    environment:
+      # Using host PostgreSQL (host.docker.internal for Docker on Mac)
+      DATABASE_URL: postgresql://${USER:-sankar.amburkar}@host.docker.internal:5432/finhealthmonitor
+      JWT_SECRET: dev-shared-secret-change-in-production
+      PORT: 8001
+      USE_LOCAL_DB: "false"
+    # No depends_on since we're using host PostgreSQL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Using host PostgreSQL (host.docker.internal for Docker on Mac)
+      DATABASE_URL: postgresql://${USER:-sankar.amburkar}@host.docker.internal:5432/finhealthmonitor
+      USER_SERVICE_URL: http://user-service:8001
+      JWT_SECRET: dev-shared-secret-change-in-production
+      PORT: 8000
+      USE_LOCAL_DB: "false"
+      # Keep existing Xero/QuickBooks config
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      QUICKBOOKS_CLIENT_ID: ${QUICKBOOKS_CLIENT_ID:-}
+      QUICKBOOKS_CLIENT_SECRET: ${QUICKBOOKS_CLIENT_SECRET:-}
+    depends_on:
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# No volumes needed since we're using host PostgreSQL

@@ -131,7 +131,7 @@ The Dockerfile includes `alembic upgrade head`, but if migrations fail:
 **Error: "Database connection failed"**
 - Verify `DATABASE_URL` is set correctly
 - Check PostgreSQL service is running in Railway
-- Test connection: `railway run python test_db_connection.py`
+- Test connection: `railway run python scripts/database/test_db_connection.py`
 
 ### Runtime Errors
 

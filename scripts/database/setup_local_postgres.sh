@@ -35,7 +35,7 @@ fi
 # Default to PostgreSQL 15 if we can't determine version (Railway typically uses 15)
 if [ -z "$RAILWAY_VERSION" ]; then
     echo "⚠️  Could not determine Railway PostgreSQL version. Defaulting to PostgreSQL 15."
-    echo "   You can check the version by running: python3 test_db_connection.py"
+    echo "   You can check the version by running: python3 scripts/database/test_db_connection.py"
     RAILWAY_VERSION="15"
 else
     echo "✅ Railway is using PostgreSQL $RAILWAY_VERSION"

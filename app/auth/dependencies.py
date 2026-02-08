@@ -1,16 +1,34 @@
 """FastAPI dependencies for authentication and authorization."""
-from fastapi import Depends, Request, HTTPException, status
+from fastapi import Depends, Request, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
 from app.models.party import Person, Tenant
 from app.auth.session import get_current_user_id, get_current_tenant_id, get_current_tenant_id_from_session
+from app.auth.jwt import verify_token, get_user_id_from_token, get_tenant_id_from_token
 
 
-async def get_current_user(request: Request, db: Session = Depends(get_db)) -> Person:
-    """Get the current authenticated user."""
-    user_id = get_current_user_id(request)
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> Person:
+    """Get the current authenticated user (supports both session and JWT)."""
+    user_id = None
+    
+    # Try JWT token first (for microservices)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        try:
+            user_id = get_user_id_from_token(token)
+        except HTTPException:
+            pass
+    
+    # Fallback to session (for backward compatibility)
+    if not user_id:
+        user_id = get_current_user_id(request)
+    
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -27,9 +45,26 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> P
     return user
 
 
-async def get_current_tenant(request: Request, db: Session = Depends(get_db)) -> Tenant:
-    """Get the current tenant from session."""
-    tenant_id = get_current_tenant_id(request)
+async def get_current_tenant(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> Tenant:
+    """Get the current tenant (supports both session and JWT)."""
+    tenant_id = None
+    
+    # Try JWT token first (for microservices)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        try:
+            tenant_id = get_tenant_id_from_token(token)
+        except HTTPException:
+            pass
+    
+    # Fallback to session (for backward compatibility)
+    if not tenant_id:
+        tenant_id = get_current_tenant_id(request)
+    
     if not tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

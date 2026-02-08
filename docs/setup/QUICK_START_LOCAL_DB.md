@@ -4,7 +4,7 @@
 
 ### 1. Install PostgreSQL
 ```bash
-./setup_local_postgres.sh
+./scripts/database/setup_local_postgres.sh
 ```
 
 ### 2. Update .env file
@@ -40,4 +40,4 @@ Should output: `Using: Local`
 
 ## 📚 Full Documentation
 
-See [LOCAL_POSTGRES_SETUP.md](LOCAL_POSTGRES_SETUP.md) for detailed instructions and troubleshooting.
+See [LOCAL_POSTGRES_SETUP.md](./LOCAL_POSTGRES_SETUP.md) for detailed instructions and troubleshooting.

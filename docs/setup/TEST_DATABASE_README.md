@@ -20,7 +20,7 @@ pip3 install --user psycopg2-binary
 Run the connection test script:
 
 ```bash
-python3 test_db_connection.py
+python3 scripts/database/test_db_connection.py
 ```
 
 This will:
@@ -40,35 +40,20 @@ Expected output:
 ✅ Connection test completed successfully!
 ```
 
-## Step 2: Create Tables
+## Step 2: Run Database Migrations
 
-After confirming the connection works, create the tables:
+After confirming the connection works, run the database migrations using Alembic:
 
 ```bash
-python3 create_payroll_tables.py
+alembic upgrade head
 ```
 
 This will:
-- ✅ Create `payroll_risk_analyses` table
+- ✅ Create all necessary tables (including `payroll_risk_analyses`)
 - ✅ Create indexes for performance
-- ✅ Display table structure
+- ✅ Set up the complete database schema
 
-Expected output:
-```
-🔌 Connecting to Railway PostgreSQL...
-📋 Creating payroll_risk_analyses table...
-✅ Table 'payroll_risk_analyses' created successfully!
-📊 Creating indexes...
-   ✅ Index 'idx_connection_id' created
-   ✅ Index 'idx_status' created
-   ✅ Index 'idx_initiated_at' created
-
-📋 Table structure:
-   - id: text (NOT NULL)
-   - connection_id: text (NOT NULL)
-   ...
-✅ All tables and indexes created successfully!
-```
+**Note:** The `create_payroll_tables.py` script has been removed as table creation is now handled by Alembic migrations. Always use `alembic upgrade head` to set up or update your database schema.
 
 ## Troubleshooting
 
