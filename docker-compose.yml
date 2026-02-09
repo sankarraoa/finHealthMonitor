@@ -20,6 +20,30 @@ services:
       timeout: 5s
       retries: 5
 
+  connection-service:
+    build: ./services/connection-service
+    ports:
+      - "8002:8002"
+    environment:
+      # Using host PostgreSQL (host.docker.internal for Docker on Mac)
+      DATABASE_URL: postgresql://${USER:-sankar.amburkar}@host.docker.internal:5432/finhealthmonitor
+      PORT: 8002
+      USE_LOCAL_DB: "false"
+      # Xero OAuth configuration
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      XERO_REDIRECT_URI: ${XERO_REDIRECT_URI:-http://localhost:8000/callback}
+      # QuickBooks OAuth configuration
+      QUICKBOOKS_CLIENT_ID: ${QUICKBOOKS_CLIENT_ID:-}
+      QUICKBOOKS_CLIENT_SECRET: ${QUICKBOOKS_CLIENT_SECRET:-}
+      QUICKBOOKS_REDIRECT_URI: ${QUICKBOOKS_REDIRECT_URI:-http://localhost:8000/quickbooks/callback}
+      QUICKBOOKS_ENVIRONMENT: ${QUICKBOOKS_ENVIRONMENT:-production}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8002/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   gateway:
     build: .
     ports:
@@ -28,6 +52,7 @@ services:
       # Using host PostgreSQL (host.docker.internal for Docker on Mac)
       DATABASE_URL: postgresql://${USER:-sankar.amburkar}@host.docker.internal:5432/finhealthmonitor
       USER_SERVICE_URL: http://user-service:8001
+      CONNECTION_SERVICE_URL: http://connection-service:8002
       JWT_SECRET: dev-shared-secret-change-in-production
       PORT: 8000
       USE_LOCAL_DB: "false"
@@ -45,6 +70,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
     depends_on:
       user-service:
+        condition: service_healthy
+      connection-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/').raise_for_status()"]
