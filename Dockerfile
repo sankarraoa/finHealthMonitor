@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Clone MCP servers from GitHub
 RUN git clone https://github.com/XeroAPI/xero-mcp-server.git /app/xero-mcp-server && \
-    git clone https://github.com/qboapi/qbo-mcp-server.git /app/quickbooks-mcp-server || \
+    git clone https://github.com/intuit/quickbooks-online-mcp-server.git /app/quickbooks-mcp-server || \
     echo "QuickBooks MCP server clone failed, will try alternative location"
 
 # Build MCP servers
