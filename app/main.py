@@ -34,6 +34,24 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(title="FinHealthMonitor", description="Xero Chart of Accounts Viewer")
 
+# Log LLM configuration on startup
+@app.on_event("startup")
+async def startup_event():
+    """Log configuration on startup."""
+    logger.info("=" * 80)
+    logger.info("FinHealthMonitor Starting Up")
+    logger.info("=" * 80)
+    logger.info(f"LLM Provider: {config.LLM_PROVIDER}")
+    logger.info(f"TOQAN_API_KEY: {'SET' if config.TOQAN_API_KEY else 'NOT SET'}")
+    logger.info(f"OPENAI_API_KEY: {'SET' if config.OPENAI_API_KEY else 'NOT SET'}")
+    if config.LLM_PROVIDER == "toqan":
+        logger.info("✅ Using Toqan LLM Engine")
+    elif config.LLM_PROVIDER == "openai":
+        logger.info("✅ Using OpenAI LLM Engine")
+    else:
+        logger.warning(f"⚠️ Unknown LLM Provider: {config.LLM_PROVIDER}")
+    logger.info("=" * 80)
+
 # Add session middleware
 app.add_middleware(
     SessionMiddleware,
@@ -537,9 +555,10 @@ async def _run_payroll_risk_async(
     analysis_id: str,
     connection_id: str,
     connection_name: str,
-    tenant_id: Optional[str],
+    tenant_id: Optional[str],  # Xero tenant ID
     tenant_name: Optional[str],
     access_token: str,
+    b2b_tenant_id: Optional[str] = None,  # B2B SaaS tenant ID
     llm_model: Optional[str] = None
 ):
     """Background task to run payroll risk analysis with progress tracking and database storage."""
@@ -565,10 +584,12 @@ async def _run_payroll_risk_async(
             payroll_risk_db.update_progress(analysis_id, progress, message)
         
         # Create agent with progress callback
+        # tenant_id is the Xero tenant ID, b2b_tenant_id is the B2B SaaS tenant ID
         agent = PayrollRiskAgent(
             bearer_token=access_token,
-            tenant_id=tenant_id,
+            tenant_id=tenant_id,  # Xero tenant ID
             connection_id=connection_id,
+            b2b_tenant_id=b2b_tenant_id,  # B2B SaaS tenant ID for cache scoping
             llm_model=llm_model,
             progress_callback=update_progress
         )
@@ -3438,9 +3459,10 @@ async def start_payroll_risk_analysis(request: Request):
             analysis_id=analysis_id,
             connection_id=connection_id,
             connection_name=connection_name,
-            tenant_id=tenant_id,
+            tenant_id=tenant_id,  # Xero tenant ID
             tenant_name=tenant_name,
             access_token=access_token,
+            b2b_tenant_id=b2b_tenant_id,  # B2B SaaS tenant ID
             llm_model=llm_model
         ))
         

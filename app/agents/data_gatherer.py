@@ -66,31 +66,33 @@ class DataGatherer:
     # Aged receivables/payables will be fetched per contact after contacts are loaded
     AGED_REPORTS_REQUIRE_CONTACTS = True
     
-    def __init__(self, mcp_client: XeroMCPClient, connection_id: Optional[str] = None, tenant_id: Optional[str] = None, use_cache: bool = True):
+    def __init__(self, mcp_client: XeroMCPClient, connection_id: Optional[str] = None, tenant_id: Optional[str] = None, xero_tenant_id: Optional[str] = None, use_cache: bool = True):
         """
         Initialize DataGatherer.
         
         Args:
             mcp_client: MCP client for fetching data
             connection_id: Connection ID for cache scoping (required if use_cache=True)
-            tenant_id: Tenant ID for cache scoping (required if use_cache=True)
+            tenant_id: B2B SaaS tenant ID for cache scoping (optional, for multi-tenant data segregation)
+            xero_tenant_id: Xero/QuickBooks tenant/organization ID (required for cache to work)
             use_cache: Whether to use cache
         """
         self.mcp_client = mcp_client
         self.connection_id = connection_id
-        self.tenant_id = tenant_id
+        self.tenant_id = tenant_id  # B2B SaaS tenant ID
+        self.xero_tenant_id = xero_tenant_id  # Xero tenant ID
         self.collected_data: Dict[str, Any] = {}
         self.data_completeness: Dict[str, bool] = {}
         self.use_cache = use_cache
-        self.cache = DataCache(connection_id=connection_id, tenant_id=tenant_id) if use_cache else None
+        self.cache = DataCache(connection_id=connection_id, xero_tenant_id=xero_tenant_id, tenant_id=tenant_id) if use_cache else None
         self.progress_callback: Optional[Callable[[int, str], None]] = None
         
         # Log initialization for debugging
         if use_cache:
-            if connection_id and tenant_id:
-                logger.info(f"✅ DataGatherer initialized with cache enabled: connection_id={connection_id}, tenant_id={tenant_id}")
+            if connection_id and xero_tenant_id:
+                logger.info(f"✅ DataGatherer initialized with cache enabled: connection_id={connection_id}, xero_tenant_id={xero_tenant_id}, tenant_id={tenant_id}")
             else:
-                logger.warning(f"⚠️ DataGatherer initialized with cache enabled but missing IDs: connection_id={connection_id}, tenant_id={tenant_id}")
+                logger.warning(f"⚠️ DataGatherer initialized with cache enabled but missing IDs: connection_id={connection_id}, xero_tenant_id={xero_tenant_id}, tenant_id={tenant_id}")
         else:
             logger.info(f"DataGatherer initialized with cache disabled")
         

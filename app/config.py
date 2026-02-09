@@ -44,7 +44,17 @@ class Config:
     USER_SERVICE_URL: str = os.getenv("USER_SERVICE_URL", "http://localhost:8001")
     
     # LLM Provider configuration
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai").lower()  # "openai" or "toqan"
+    # Auto-detect provider if not explicitly set, based on which API key is present
+    _llm_provider = os.getenv("LLM_PROVIDER", "").lower()
+    if not _llm_provider:
+        # Auto-detect: prefer Toqan if TOQAN_API_KEY is set, otherwise OpenAI
+        if os.getenv("TOQAN_API_KEY"):
+            _llm_provider = "toqan"
+        elif os.getenv("OPENAI_API_KEY"):
+            _llm_provider = "openai"
+        else:
+            _llm_provider = "openai"  # Default fallback
+    LLM_PROVIDER: str = _llm_provider
     
     # Architecture mode
     USE_AGENTIC_ARCHITECTURE: bool = os.getenv("USE_AGENTIC_ARCHITECTURE", "false").lower() == "true"

@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # Note: Using local PostgreSQL instead of Docker container
   # If you want to use Docker PostgreSQL, uncomment the postgres service above
@@ -38,6 +36,13 @@ services:
       XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
       QUICKBOOKS_CLIENT_ID: ${QUICKBOOKS_CLIENT_ID:-}
       QUICKBOOKS_CLIENT_SECRET: ${QUICKBOOKS_CLIENT_SECRET:-}
+      # LLM Provider configuration (Toqan)
+      TOQAN_API_KEY: ${TOQAN_API_KEY:-}
+      TOQAN_API_BASE_URL: ${TOQAN_API_BASE_URL:-https://api.coco.prod.toqan.ai/api}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}  # Optional - will auto-detect if TOQAN_API_KEY is set
+      # Optional: OpenAI config (if you want to use OpenAI instead)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
     depends_on:
       user-service:
         condition: service_healthy

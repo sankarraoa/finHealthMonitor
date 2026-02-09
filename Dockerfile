@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     nodejs \
     npm \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -18,15 +19,21 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Clone MCP servers from GitHub
+RUN git clone https://github.com/XeroAPI/xero-mcp-server.git /app/xero-mcp-server && \
+    git clone https://github.com/qboapi/qbo-mcp-server.git /app/quickbooks-mcp-server || \
+    echo "QuickBooks MCP server clone failed, will try alternative location"
 
 # Build MCP servers
 WORKDIR /app/xero-mcp-server
 RUN npm install && npm run build
 
 WORKDIR /app/quickbooks-mcp-server
-RUN npm install && npm run build
+RUN npm install && npm run build || echo "QuickBooks MCP server build failed, continuing..."
+
+# Copy application code (after MCP servers are cloned and built)
+WORKDIR /app
+COPY . .
 
 # Return to app directory
 WORKDIR /app

@@ -21,22 +21,25 @@ class PayrollRiskAgent:
     3. Result Generation (JSON + narrative)
     """
     
-    def __init__(self, bearer_token: str, tenant_id: Optional[str] = None, connection_id: Optional[str] = None, llm_model: Optional[str] = None, use_agentic: Optional[bool] = None, progress_callback: Optional[Callable[[int, str], None]] = None):
+    def __init__(self, bearer_token: str, tenant_id: Optional[str] = None, connection_id: Optional[str] = None, b2b_tenant_id: Optional[str] = None, llm_model: Optional[str] = None, use_agentic: Optional[bool] = None, progress_callback: Optional[Callable[[int, str], None]] = None):
         """
         Initialize the Payroll Risk Agent.
         
         Args:
             bearer_token: Xero access token
-            tenant_id: Optional tenant/organization ID to use for API calls
+            tenant_id: Xero tenant/organization ID to use for API calls
             connection_id: Connection ID for cache scoping (required for cache to work)
+            b2b_tenant_id: B2B SaaS tenant ID for cache scoping (optional, for multi-tenant data segregation)
             llm_model: Optional LLM model name (for OpenAI only, ignored for Toqan)
             use_agentic: Optional flag to override config.USE_AGENTIC_ARCHITECTURE
             progress_callback: Optional callback function(progress: int, message: str) for progress updates
         """
         self.mcp_client = XeroMCPClient(bearer_token=bearer_token, tenant_id=tenant_id)
         self.connection_id = connection_id
-        self.tenant_id = tenant_id
-        self.data_gatherer = DataGatherer(self.mcp_client, connection_id=connection_id, tenant_id=tenant_id)
+        self.tenant_id = tenant_id  # Xero tenant ID
+        self.b2b_tenant_id = b2b_tenant_id  # B2B SaaS tenant ID
+        # Pass both tenant IDs to DataGatherer for proper cache scoping
+        self.data_gatherer = DataGatherer(self.mcp_client, connection_id=connection_id, xero_tenant_id=tenant_id, tenant_id=b2b_tenant_id)
         self.data_gatherer.set_progress_callback(progress_callback)
         self.llm_engine = create_llm_engine(model=llm_model, use_agentic=use_agentic)
         self.progress_callback = progress_callback
@@ -85,6 +88,26 @@ class PayrollRiskAgent:
             # Parse organization details from text response
             org_id = self._extract_org_id(org_data)
             base_currency = self._extract_base_currency(org_data)
+            
+            # Ensure all cache updates are persisted before LLM analysis
+            # The cache.set() method already commits immediately, but we verify cache is ready
+            if self.data_gatherer.cache and self.data_gatherer.use_cache:
+                logger.info("Verifying cache persistence before LLM analysis...")
+                try:
+                    # Verify that critical data is cached by checking a few key entries
+                    critical_keys = ["organisation", "accounts"]
+                    cached_count = 0
+                    for key in critical_keys:
+                        if self.data_gatherer.cache.has(key):
+                            cached_count += 1
+                            logger.debug(f"✅ Verified cache entry exists for: {key}")
+                    
+                    if cached_count > 0:
+                        logger.info(f"✅ Cache verified: {cached_count}/{len(critical_keys)} critical entries persisted")
+                    else:
+                        logger.warning("⚠️ No critical cache entries found (cache may be disabled or empty)")
+                except Exception as e:
+                    logger.warning(f"Cache verification warning: {str(e)} (continuing anyway)")
             
             # Step 3: LLM Analysis
             if self.progress_callback:
