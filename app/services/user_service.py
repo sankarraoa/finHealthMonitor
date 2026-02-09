@@ -136,7 +136,8 @@ def update_user(
     last_name: Optional[str] = None,
     phone: Optional[str] = None,
     image_url: Optional[str] = None,
-    password: Optional[str] = None
+    password: Optional[str] = None,
+    modified_by: Optional[str] = None
 ) -> Optional[Person]:
     """Update user information."""
     user = get_user_by_id(db, user_id)

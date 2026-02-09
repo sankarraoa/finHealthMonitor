@@ -30,17 +30,15 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Name</th>
+                    <th>User</th>
                     <th>Email</th>
-                    <th>Phone</th>
                     <th>Status</th>
-                    <th>Roles</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="users-table-body">
                 <tr>
-                    <td colspan="6" style="text-align: center; padding: 40px;">
+                    <td colspan="4" style="text-align: center; padding: 40px;">
                         <div style="color: #606060;">Loading users...</div>
                     </td>
                 </tr>
@@ -139,7 +137,7 @@ async function loadUsers() {
 
     if (!currentTenantId) {
         document.getElementById('users-table-body').innerHTML = 
-            '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #dc3545;">No tenant found. Please contact administrator.</td></tr>';
+            '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #dc3545;">No tenant found. Please contact administrator.</td></tr>';
         return;
     }
 
@@ -153,7 +151,7 @@ async function loadUsers() {
     } catch (error) {
         console.error('Error loading users:', error);
         document.getElementById('users-table-body').innerHTML = 
-            '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #dc3545;">Error loading users: ' + error.message + '</td></tr>';
+            '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #dc3545;">Error loading users: ' + error.message + '</td></tr>';
     }
 }
 
@@ -161,7 +159,7 @@ async function loadUsers() {
 function displayUsers(users) {
     const tbody = document.getElementById('users-table-body');
     if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #606060;">No users found. Click "Add User" to create one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #606060;">No users found. Click "Add User" to create one.</td></tr>';
         return;
     }
 
@@ -172,13 +170,31 @@ function displayUsers(users) {
             ? '<span class="status-badge status-completed">Active</span>'
             : '<span class="status-badge status-failed">Inactive</span>';
         
+        // Get user image or use initials as fallback
+        let imageHtml = '';
+        if (user.image_url) {
+            imageHtml = `<img src="${escapeHtml(user.image_url)}" alt="${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #E0E0E0;" />`;
+        } else {
+            // Generate initials
+            const initials = (user.first_name?.[0] || '') + (user.last_name?.[0] || '');
+            imageHtml = `<div style="width: 40px; height: 40px; border-radius: 50%; background: #4A90E2; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; border: 2px solid #E0E0E0;">${escapeHtml(initials)}</div>`;
+        }
+        
         return `
             <tr>
-                <td>${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}</td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="flex-shrink: 0;">
+                            ${imageHtml}
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}</div>
+                            <div style="font-size: 13px; color: #606060;">${escapeHtml(rolesText)}</div>
+                        </div>
+                    </div>
+                </td>
                 <td>${escapeHtml(user.email)}</td>
-                <td>${escapeHtml(user.phone || '-')}</td>
                 <td>${statusBadge}</td>
-                <td>${escapeHtml(rolesText)}</td>
                 <td>
                     <button class="icon-action-link" onclick="editUser('${user.id}')" title="Edit">
                         <i class="las la-edit"></i>
@@ -259,6 +275,22 @@ async function showAddUserModal() {
 document.getElementById('userImageFile').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (file) {
+        // Validate file size (max 2MB)
+        if (file.size > 2 * 1024 * 1024) {
+            alert('Image file is too large. Please use an image smaller than 2MB.');
+            e.target.value = ''; // Clear the input
+            document.getElementById('imagePreview').style.display = 'none';
+            return;
+        }
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file.');
+            e.target.value = ''; // Clear the input
+            document.getElementById('imagePreview').style.display = 'none';
+            return;
+        }
+        
         const reader = new FileReader();
         reader.onload = function(e) {
             document.getElementById('previewImg').src = e.target.result;
@@ -331,15 +363,35 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
         return;
     }
     
-    // For now, we'll convert image to data URL if uploaded
-    // In production, you'd upload to a file storage service
+    // Convert uploaded image to base64 data URL for storage in database
+    // Images are optimized client-side and stored as base64 (suitable for small avatars)
     let imageUrl = null;
     if (imageFile) {
-        imageUrl = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.readAsDataURL(imageFile);
-        });
+        // Validate file size (max 2MB before compression)
+        if (imageFile.size > 2 * 1024 * 1024) {
+            alert('Image file is too large. Please use an image smaller than 2MB.');
+            return;
+        }
+        
+        try {
+            imageUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const dataUrl = e.target.result;
+                    // Validate that it's a proper data URL
+                    if (dataUrl && dataUrl.startsWith('data:image/')) {
+                        resolve(dataUrl);
+                    } else {
+                        reject(new Error('Invalid image format'));
+                    }
+                };
+                reader.onerror = () => reject(new Error('Failed to read image file'));
+                reader.readAsDataURL(imageFile);
+            });
+        } catch (error) {
+            alert(`Error processing image: ${error.message}`);
+            return;
+        }
     }
     
     try {
@@ -348,23 +400,43 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
         
         if (editingUserId) {
             // Update user
+            // Build update payload - only include fields that are being updated
+            const updatePayload = {
+                first_name: formData.get('first_name'),
+                last_name: formData.get('last_name'),
+            };
+            
+            // Only include image_url if a new image was actually uploaded
+            if (imageUrl) {
+                updatePayload.image_url = imageUrl;
+            }
+            
             response = await fetch(`/api/tenants/${currentTenantId}/users/${editingUserId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 credentials: 'include',
-                body: JSON.stringify({
-                    first_name: formData.get('first_name'),
-                    last_name: formData.get('last_name'),
-                    phone: '0000000000', // Default phone
-                    image_url: imageUrl || null
-                })
+                body: JSON.stringify(updatePayload)
             });
             
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Failed to update user');
+                let errorMessage = 'Failed to update user';
+                try {
+                    const error = await response.json();
+                    // Handle Pydantic validation errors
+                    if (error.detail) {
+                        if (Array.isArray(error.detail)) {
+                            // Pydantic validation errors are arrays
+                            errorMessage = error.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+                        } else {
+                            errorMessage = error.detail;
+                        }
+                    }
+                } catch (e) {
+                    errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
             }
             
             userId = editingUserId;
@@ -387,8 +459,22 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
             });
             
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Failed to create user');
+                let errorMessage = 'Failed to create user';
+                try {
+                    const error = await response.json();
+                    // Handle Pydantic validation errors
+                    if (error.detail) {
+                        if (Array.isArray(error.detail)) {
+                            // Pydantic validation errors are arrays
+                            errorMessage = error.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+                        } else {
+                            errorMessage = error.detail;
+                        }
+                    }
+                } catch (e) {
+                    errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
             }
             
             const user = await response.json();
